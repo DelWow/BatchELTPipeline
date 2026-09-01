@@ -28,12 +28,12 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 4 — Define the ingestion contract
 
-- [ ] Record the selected source URLs, terms, native format, and expected publication granularity.
-- [ ] Define a small development slice and the full multi-year, all-CMA processing window without claiming nonexistent row-level scale.
-- [ ] Define deterministic raw paths and the metadata stored for each downloaded file.
-- [ ] Choose integrity checks using content length, source metadata, and a local SHA-256 checksum.
-- [ ] Define retry, timeout, partial-download, and already-downloaded behavior before implementation.
-- [ ] Pause for review.
+- [x] Record official PIDs, URLs, licences, monthly frequency, dimensions, native ZIP/CSV format, and source-specific availability in `config/sources.toml`.
+- [x] Define the 2024–2025 three-CMA development slice and source-specific full benchmark windows without treating cube datapoints as row-level events.
+- [x] Define immutable release/SHA-addressed raw paths and the source metadata plus generated manifest stored with every archive.
+- [x] Define WDS, HTTP, size, SHA-256, ZIP CRC/member, path-safety, metadata, and coverage integrity checks.
+- [x] Define bounded retry/timeout behavior, run-owned partial cleanup, atomic publication, idempotent skips, and non-destructive revision handling.
+- [x] Validate the source registry and ingestion contract, then pause for review.
 
 ## Phase 5 — Implement and verify raw ingestion
 

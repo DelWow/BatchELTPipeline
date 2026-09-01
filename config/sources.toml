@@ -1,0 +1,158 @@
+# Machine-readable source registry for the Phase 4 ingestion contract. Phase 5
+# will parse this file; no source-specific URL should be hidden in Python code.
+contract_version = 1
+provider_id = "statistics_canada"
+provider_name = "Statistics Canada"
+language = "en"
+raw_subdirectory = "statcan"
+cube_metadata_api_url = "https://www150.statcan.gc.ca/t1/wds/rest/getCubeMetadata"
+statistics_canada_licence_url = "https://www.statcan.gc.ca/en/terms-conditions/open-licence"
+cmhc_licence_url = "https://www.cmhc-schl.gc.ca/professionals/housing-markets-data-and-research/housing-data/cmhc-licence-agreement-use-of-data"
+
+[http]
+connect_timeout_seconds = 10
+read_timeout_seconds = 120
+download_deadline_seconds = 1800
+max_attempts = 4
+backoff_base_seconds = 1
+backoff_cap_seconds = 30
+retry_after_cap_seconds = 300
+retryable_status_codes = [408, 409, 425, 429, 500, 502, 503, 504]
+
+[profiles.development]
+# The permits archive is deliberately excluded because its current compressed
+# size is roughly 365 MB. Its downloader behavior will be covered by mocked
+# tests before the first full-profile run.
+source_ids = [
+    "cmhc_housing_activity",
+    "cmhc_starts_by_market",
+    "statcan_new_housing_price_index",
+]
+reference_start = "2024-01"
+reference_end = "2025-12"
+cma_names = [
+    "Toronto, Ontario",
+    "Vancouver, British Columbia",
+    "Calgary, Alberta",
+]
+cma_codes = ["535", "933", "825"]
+
+[profiles.full]
+source_ids = [
+    "cmhc_housing_activity",
+    "cmhc_starts_by_market",
+    "statcan_building_permits",
+    "statcan_new_housing_price_index",
+]
+reference_start = "2016-01"
+reference_end = "2025-12"
+geography_scope = "all_cma_rows_available_per_source"
+
+[[sources]]
+id = "cmhc_housing_activity"
+role = "core_housing_activity"
+source_organization = "Canada Mortgage and Housing Corporation"
+distributor = "Statistics Canada"
+table_id = "34-10-0154-01"
+product_id = "34100154"
+title = "Canada Mortgage and Housing Corporation, housing starts, under construction and completions in selected census metropolitan areas, monthly"
+table_url = "https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3410015401"
+download_api_url = "https://www150.statcan.gc.ca/t1/wds/rest/getFullTableDownloadCSV/34100154/en"
+expected_download_url = "https://www150.statcan.gc.ca/n1/tbl/csv/34100154-eng.zip"
+frequency = "monthly"
+frequency_code = 6
+availability_start = "1972-01"
+baseline_start = "2016-01"
+baseline_end = "2025-12"
+dimensions = ["Geography", "Housing estimates", "Type of unit"]
+native_format = "zip_with_csv_and_metadata_csv"
+data_member = "34100154.csv"
+metadata_member = "34100154_MetaData.csv"
+max_archive_bytes = 100_000_000
+licence_urls = [
+    "https://www.statcan.gc.ca/en/terms-conditions/open-licence",
+    "https://www.cmhc-schl.gc.ca/professionals/housing-markets-data-and-research/housing-data/cmhc-licence-agreement-use-of-data",
+]
+
+[[sources]]
+id = "cmhc_starts_by_market"
+role = "core_intended_market_detail"
+source_organization = "Canada Mortgage and Housing Corporation"
+distributor = "Statistics Canada"
+table_id = "34-10-0148-01"
+product_id = "34100148"
+title = "Canada Mortgage and Housing Corporation, housing starts, by type of dwelling and market type in centres 10,000 and over, Canada, provinces, census metropolitan areas and large census agglomerations"
+table_url = "https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3410014801"
+download_api_url = "https://www150.statcan.gc.ca/t1/wds/rest/getFullTableDownloadCSV/34100148/en"
+expected_download_url = "https://www150.statcan.gc.ca/n1/tbl/csv/34100148-eng.zip"
+frequency = "monthly"
+frequency_code = 6
+availability_start = "1988-06"
+baseline_start = "2016-01"
+baseline_end = "2025-12"
+dimensions = ["Geography", "Type of dwelling unit", "Type of market"]
+native_format = "zip_with_csv_and_metadata_csv"
+data_member = "34100148.csv"
+metadata_member = "34100148_MetaData.csv"
+max_archive_bytes = 150_000_000
+licence_urls = [
+    "https://www.statcan.gc.ca/en/terms-conditions/open-licence",
+    "https://www.cmhc-schl.gc.ca/professionals/housing-markets-data-and-research/housing-data/cmhc-licence-agreement-use-of-data",
+]
+
+[[sources]]
+id = "statcan_building_permits"
+role = "leading_supply_indicator"
+source_organization = "Statistics Canada"
+distributor = "Statistics Canada"
+table_id = "34-10-0292-01"
+product_id = "34100292"
+title = "Building permits, by type of structure and type of work"
+table_url = "https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3410029201"
+download_api_url = "https://www150.statcan.gc.ca/t1/wds/rest/getFullTableDownloadCSV/34100292/en"
+expected_download_url = "https://www150.statcan.gc.ca/n1/tbl/csv/34100292-eng.zip"
+frequency = "monthly"
+frequency_code = 6
+availability_start = "2018-01"
+baseline_start = "2018-01"
+baseline_end = "2025-12"
+dimensions = [
+    "Geography",
+    "Type of building",
+    "Type of work",
+    "Variables",
+    "Seasonal adjustment, value type",
+]
+native_format = "zip_with_csv_and_metadata_csv"
+data_member = "34100292.csv"
+metadata_member = "34100292_MetaData.csv"
+max_archive_bytes = 1_000_000_000
+licence_urls = [
+    "https://www.statcan.gc.ca/en/terms-conditions/open-licence",
+]
+
+[[sources]]
+id = "statcan_new_housing_price_index"
+role = "market_context_indicator"
+source_organization = "Statistics Canada"
+distributor = "Statistics Canada"
+table_id = "18-10-0205-01"
+product_id = "18100205"
+title = "New housing price index, monthly"
+table_url = "https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1810020501"
+download_api_url = "https://www150.statcan.gc.ca/t1/wds/rest/getFullTableDownloadCSV/18100205/en"
+expected_download_url = "https://www150.statcan.gc.ca/n1/tbl/csv/18100205-eng.zip"
+frequency = "monthly"
+frequency_code = 6
+availability_start = "1981-01"
+baseline_start = "2016-01"
+baseline_end = "2025-12"
+dimensions = ["Geography", "New housing price indexes"]
+native_format = "zip_with_csv_and_metadata_csv"
+data_member = "18100205.csv"
+metadata_member = "18100205_MetaData.csv"
+max_archive_bytes = 50_000_000
+licence_urls = [
+    "https://www.statcan.gc.ca/en/terms-conditions/open-licence",
+]
+
