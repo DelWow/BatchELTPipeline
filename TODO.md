@@ -11,12 +11,12 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 2 — Establish Python tooling and repository hygiene
 
-- [ ] Decide and document dependency management (`pyproject.toml` or `requirements.txt`).
-- [ ] Add a project-local development environment setup.
-- [ ] Add `.gitignore` rules for downloaded data, generated output, secrets, caches, and local tooling.
-- [ ] Add initial formatting, linting, and test-runner configuration.
-- [ ] Decide whether to initialize Git; do not initialize, stage, commit, or push without explicit approval.
-- [ ] Verify the development tools can run, then pause for review.
+- [x] Choose and document `pyproject.toml` plus `uv.lock` for direct constraints and reproducible dependency resolution.
+- [x] Add a Python 3.11 project-local `.venv` workflow in `DEVELOPMENT.md`.
+- [x] Add `.gitignore` rules for downloaded data, generated output, secrets, caches, and local tooling.
+- [x] Configure Ruff for formatting/linting and pytest as the test runner.
+- [x] Confirm Git was already initialized; do not initialize, stage, commit, push, or otherwise mutate Git state.
+- [x] Verify the locked Python environment and development tools can run, then pause for review.
 
 ## Phase 3 — Create the project structure and configuration
 

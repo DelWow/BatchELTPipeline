@@ -1,0 +1,44 @@
+# Project-local Python and uv artifacts
+.venv/
+.python/
+.uv-cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Test, lint, and coverage output
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Downloaded source data and generated pipeline output. Directory placeholders
+# may be committed later, but data itself must remain local.
+data/raw/**
+data/interim/**
+data/curated/**
+data/checkpoints/**
+!data/**/.gitkeep
+
+# Spark creates these when warehouse paths are not configured explicitly.
+derby.log
+metastore_db/
+spark-warehouse/
+
+# Credentials and local runtime configuration
+.env
+.env.*
+!.env.example
+*.key
+*.p8
+*.pem
+
+# Logs, editor state, and operating-system metadata
+*.log
+.DS_Store
+.idea/
+.vscode/
+
