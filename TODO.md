@@ -20,11 +20,11 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 3 — Create the project structure and configuration
 
-- [ ] Create the minimal source, test, configuration, SQL, Kubernetes, and data directory structure.
-- [ ] Add Python package markers and narrow command-line entry points without pipeline behavior yet.
-- [ ] Add typed configuration loading with safe local defaults and environment-variable overrides.
-- [ ] Document which paths are inputs, generated outputs, and intentionally excluded from Git.
-- [ ] Verify imports and configuration loading, then pause for review.
+- [x] Create the minimal source, test, configuration, SQL, Kubernetes, and data directory structure.
+- [x] Add an installable `housing_elt` package and read-only `show-config` entry points without pipeline behavior.
+- [x] Add immutable typed configuration with safe local defaults and `HOUSING_ELT_` environment-variable overrides.
+- [x] Document which paths are inputs, generated outputs, versioned configuration, and intentionally excluded from Git.
+- [x] Verify package imports, both CLI entry points, configuration overrides, linting, formatting, and unit tests, then pause for review.
 
 ## Phase 4 — Define the ingestion contract
 
