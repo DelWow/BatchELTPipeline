@@ -34,8 +34,10 @@ duplicate the CMHC observations.
 ## Scope and scale
 
 - **Baseline window:** January 2016 through December 2025 (ten complete calendar
-  years). Later monthly releases will be incremental pipeline runs, not part of
-  the fixed benchmark window.
+  years) for the CMHC and price-index series. The current building-permits table
+  begins in January 2018, so its honest source-specific window is 2018–2025.
+  Later monthly releases will be incremental pipeline runs, not part of the
+  fixed benchmark window.
 - **Geography:** retain CMA-level observations published by each source. Exclude
   Canada, province, census agglomeration, census subdivision, and CMA-part rows
   from the CMA analytical facts. Source coverage will be explicit because some
@@ -43,9 +45,9 @@ duplicate the CMHC observations.
 - **Development slice:** Toronto, Vancouver, and Calgary over 24 months. This is
   small enough for fast local tests while exercising multiple regions and time
   periods.
-- **Full run:** all eligible CMA rows for the ten-year baseline across the four
-  tables. The exact normalized row count will be measured after ingestion; no
-  unsupported million-row claim will be made.
+- **Full run:** all eligible CMA rows in each source-specific baseline window.
+  The exact normalized row count will be measured after ingestion; published
+  cube datapoints will not be misrepresented as building-level events.
 - **Native format:** Statistics Canada full-table ZIP downloads containing CSV
   data plus cube metadata. Raw files remain unchanged in the landing zone.
 
@@ -132,8 +134,8 @@ organization.
 
 - Inspect the downloaded cube metadata before freezing raw schemas or dimension
   labels; table titles alone are not a schema contract.
-- Confirm the earliest usable month and CMA coverage for every selected series
-  in the 2016–2025 baseline.
+- Revalidate the configured source start dates and CMA coverage against each
+  downloaded metadata snapshot before transformation.
 - Measure actual row counts and missingness before choosing validation ranges.
 - Confirm which observations are seasonally adjusted and never combine adjusted
   and unadjusted measures without an explicit dimension.
