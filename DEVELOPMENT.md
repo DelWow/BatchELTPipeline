@@ -52,6 +52,33 @@ To activate it for an interactive shell session instead:
 source .venv/bin/activate
 ```
 
+## Ingest the development sources
+
+The development profile downloads and validates the two CMHC-origin tables and
+the New Housing Price Index. It intentionally excludes the much larger building
+permits archive so local iteration stays fast:
+
+```bash
+uv run housing-elt ingest --profile development
+```
+
+Every source is streamed into `data/raw/`, checked against its WDS metadata,
+size cap, SHA-256 digest, ZIP CRC, safe member paths, and expected CSV members,
+then published under an immutable release/digest path. Rerunning the command
+revalidates the local bytes and reports `already_present` when the source
+revision hints still match; it does not append or overwrite the snapshot.
+
+The full profile includes the building-permits archive, which was approximately
+365 MB compressed when the ingestion contract was reviewed:
+
+```bash
+uv run housing-elt ingest --profile full
+```
+
+Use the full profile intentionally because it consumes materially more local
+bandwidth, disk, and validation time. Both profiles use public endpoints and do
+not require credentials or paid cloud resources.
+
 Do not install project dependencies into the system Python. When dependencies
 change, run `uv lock` intentionally and review the resulting `uv.lock` diff.
 CI and reproducible local runs should use `uv sync --locked`, which fails when
