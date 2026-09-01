@@ -37,12 +37,12 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 5 — Implement and verify raw ingestion
 
-- [ ] Implement the source-specific downloader into `data/raw/` without changing the native format.
-- [ ] Add idempotency using the deterministic paths and integrity checks from Phase 4.
-- [ ] Add retry, timeout, clear logging, and partial-download cleanup behavior.
-- [ ] Add ingestion unit tests that do not require the public endpoint.
-- [ ] Run ingestion for the small sample and verify file integrity and rerun behavior.
-- [ ] Pause for review.
+- [x] Implement registry-driven, streamed Statistics Canada downloads into `data/raw/` without changing the native ZIP format.
+- [x] Add release/SHA-addressed immutable publication, manifest verification, and idempotent rerun behavior.
+- [x] Add bounded timeout/retry behavior, actionable logs, run-owned partial cleanup, and atomic publication.
+- [x] Add mocked ingestion tests for success, retries, corrupt ZIP cleanup, unexpected hosts, idempotency, and local corruption.
+- [x] Run the development profile, independently verify all three ZIPs, and confirm the rerun reports `already_present` without archive downloads.
+- [x] Pause for review.
 
 ## Phase 6 — Clean source observations with PySpark
 
