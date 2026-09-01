@@ -1,0 +1,44 @@
+[project]
+name = "canadian-housing-elt"
+version = "0.1.0"
+description = "Batch ELT pipeline for Canadian metropolitan housing indicators"
+requires-python = ">=3.11,<3.12"
+dependencies = []
+
+# Runtime dependencies are added in the phase that first uses them. Keeping the
+# initial environment limited to development tools makes dependency changes
+# small and makes the purpose of each library easy to review.
+[dependency-groups]
+dev = [
+    "pytest>=8.4,<10",
+    "ruff>=0.12,<1",
+]
+
+[tool.pytest.ini_options]
+addopts = [
+    "-ra",
+    "--strict-config",
+    "--strict-markers",
+]
+testpaths = ["tests"]
+xfail_strict = true
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+extend-exclude = [
+    ".python",
+    "data",
+]
+
+[tool.ruff.lint]
+# E/F cover core correctness and style, I keeps imports deterministic, B catches
+# likely bugs, and UP keeps syntax aligned with the pinned Python baseline.
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+
+[tool.ruff.format]
+docstring-code-format = true
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"
+
