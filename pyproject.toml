@@ -1,9 +1,16 @@
+[build-system]
+requires = ["setuptools>=80,<82"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "canadian-housing-elt"
 version = "0.1.0"
 description = "Batch ELT pipeline for Canadian metropolitan housing indicators"
 requires-python = ">=3.11,<3.12"
 dependencies = []
+
+[project.scripts]
+housing-elt = "housing_elt.cli:main"
 
 # Runtime dependencies are added in the phase that first uses them. Keeping the
 # initial environment limited to development tools makes dependency changes
@@ -23,6 +30,9 @@ addopts = [
 testpaths = ["tests"]
 xfail_strict = true
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py311"
@@ -41,4 +51,3 @@ docstring-code-format = true
 indent-style = "space"
 line-ending = "lf"
 quote-style = "double"
-
