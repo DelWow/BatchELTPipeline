@@ -38,6 +38,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="source registry path (default: <project-root>/config/sources.toml)",
     )
+    clean_parser = subparsers.add_parser(
+        "clean",
+        help="read, normalize, and count clean PySpark source observations",
+    )
+    clean_parser.add_argument(
+        "--profile",
+        default="development",
+        help="source profile from config/sources.toml (default: development)",
+    )
+    clean_parser.add_argument(
+        "--registry",
+        type=Path,
+        help="source registry path (default: <project-root>/config/sources.toml)",
+    )
     return parser
 
 
@@ -85,6 +99,63 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"bytes={result.byte_count} sha256={result.sha256} "
                 f"path={result.archive_path}"
             )
+        return 0
+
+    if args.command == "clean":
+        # Imports are intentionally local: inspecting configuration or running
+        # ingestion should not start a JVM or pay Spark import/startup costs.
+        from pyspark.errors import PySparkException
+        from pyspark.sql import functions as F
+
+        from housing_elt.spark import create_local_spark
+        from housing_elt.transformation.errors import TransformationError
+        from housing_elt.transformation.pipeline import clean_profile
+
+        try:
+            settings = load_settings()
+        except SettingsError as error:
+            parser.error(str(error))
+
+        logging.basicConfig(
+            level=getattr(logging, settings.log_level),
+            format="%(asctime)s level=%(levelname)s %(name)s %(message)s",
+        )
+        registry_path = args.registry or settings.project_root / "config/sources.toml"
+        if not registry_path.is_absolute():
+            registry_path = settings.project_root / registry_path
+
+        spark = None
+        try:
+            registry = load_source_registry(registry_path.resolve())
+            spark = create_local_spark("canadian-housing-clean")
+            frames = clean_profile(
+                spark,
+                registry,
+                args.profile,
+                settings.raw_data_dir,
+                settings.interim_data_dir,
+            )
+            for source_id, frame in frames.items():
+                summary = frame.agg(
+                    F.count("*").alias("clean_rows"),
+                    F.sum(F.when(~F.col("is_publishable"), 1).otherwise(0)).alias(
+                        "non_publishable_rows"
+                    ),
+                    F.min("reference_month").alias("reference_start"),
+                    F.max("reference_month").alias("reference_end"),
+                ).first()
+                print(
+                    f"{source_id}: clean_rows={summary.clean_rows} "
+                    f"non_publishable_rows={summary.non_publishable_rows} "
+                    f"reference_start={summary.reference_start} "
+                    f"reference_end={summary.reference_end}"
+                )
+        except (PySparkException, RegistryError, TransformationError) as error:
+            logging.getLogger(__name__).error("cleaning_failed reason=%s", error)
+            return 1
+        finally:
+            if spark is not None:
+                spark.stop()
         return 0
 
     # argparse enforces the command choices, so reaching this branch would be a

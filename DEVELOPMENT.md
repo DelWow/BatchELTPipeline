@@ -10,9 +10,8 @@ maintaining separate frozen requirements files.
 
 Python 3.11 is pinned in `.python-version`. Using one Python minor version in
 development, tests, and the future container reduces the risk of driver and
-executor differences in PySpark. Runtime packages such as PySpark and the
-Snowflake client will be added only when their designs are reviewed in later
-phases.
+executor differences in PySpark. PySpark 4.2 is bounded to its reviewed minor
+line; the Snowflake client will be added only when its design is reviewed.
 
 `ruff` provides both formatting and linting in one fast tool. `pytest` is used
 because fixtures and parametrization make data-transformation edge cases easy
@@ -78,6 +77,22 @@ uv run housing-elt ingest --profile full
 Use the full profile intentionally because it consumes materially more local
 bandwidth, disk, and validation time. Both profiles use public endpoints and do
 not require credentials or paid cloud resources.
+
+## Clean the development observations with PySpark
+
+After ingestion, run the source-specific cleaning flow in local Spark mode:
+
+```bash
+uv run housing-elt clean --profile development
+```
+
+The command extracts each CSV member byte-for-byte into the ignored
+`data/interim/extracted/` cache because Spark cannot read a CSV member directly
+inside a ZIP. It validates the exact source header, applies explicit schemas,
+filters the reviewed development window/CMAs, resolves duplicate revisions, and
+prints one clean row count per source. It does not download data, aggregate the
+facts, write curated output, or contact a cloud service. See
+`TRANSFORMATION_CONTRACT.md` for the source grains and semantic rules.
 
 Do not install project dependencies into the system Python. When dependencies
 change, run `uv lock` intentionally and review the resulting `uv.lock` diff.

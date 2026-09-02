@@ -46,13 +46,13 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 6 — Clean source observations with PySpark
 
-- [ ] Define explicit raw and clean Spark schemas for each source-specific fact grain.
-- [ ] Implement raw reads and type normalization as testable functions.
-- [ ] Implement required-field and null handling as a separate transformation.
-- [ ] Implement duplicate/overlapping-aggregate handling using documented dimension keys.
-- [ ] Implement revision, status-symbol, geography, unit/scalar, and stock-versus-flow handling.
-- [ ] Add focused unit tests for schema enforcement, nulls, duplicates, revisions, and semantic rules.
-- [ ] Run the cleaning flow against the development sample, then pause for review.
+- [x] Define explicit raw and clean Spark schemas for each source-specific fact grain.
+- [x] Implement raw reads and type normalization as testable functions.
+- [x] Implement required-field and null handling as a separate transformation.
+- [x] Implement duplicate/overlapping-aggregate handling using documented dimension keys.
+- [x] Implement revision, status-symbol, geography, unit/scalar, and stock-versus-flow handling.
+- [x] Add focused unit tests for schema enforcement, nulls, duplicates, revisions, and semantic rules.
+- [x] Run the cleaning flow against the development sample, then pause for review.
 
 ## Phase 7 — Build the analytics aggregation and partitioned output
 
