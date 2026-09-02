@@ -9,6 +9,10 @@ description = "Batch ELT pipeline for Canadian metropolitan housing indicators"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "httpx>=0.28,<1",
+    # Spark runs in local mode during development and uses the same DataFrame
+    # code in the later container/Kubernetes phases. A minor-version ceiling
+    # avoids silently changing Spark SQL behavior on a routine lock refresh.
+    "pyspark>=4.2,<4.3",
 ]
 
 [project.scripts]

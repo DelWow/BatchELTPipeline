@@ -46,22 +46,22 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 6 — Clean source observations with PySpark
 
-- [ ] Define explicit raw and clean Spark schemas for each source-specific fact grain.
-- [ ] Implement raw reads and type normalization as testable functions.
-- [ ] Implement required-field and null handling as a separate transformation.
-- [ ] Implement duplicate/overlapping-aggregate handling using documented dimension keys.
-- [ ] Implement revision, status-symbol, geography, unit/scalar, and stock-versus-flow handling.
-- [ ] Add focused unit tests for schema enforcement, nulls, duplicates, revisions, and semantic rules.
-- [ ] Run the cleaning flow against the development sample, then pause for review.
+- [x] Define explicit raw and clean Spark schemas for each source-specific fact grain.
+- [x] Implement raw reads and type normalization as testable functions.
+- [x] Implement required-field and null handling as a separate transformation.
+- [x] Implement duplicate/overlapping-aggregate handling using documented dimension keys.
+- [x] Implement revision, status-symbol, geography, unit/scalar, and stock-versus-flow handling.
+- [x] Add focused unit tests for schema enforcement, nulls, duplicates, revisions, and semantic rules.
+- [x] Run the cleaning flow against the development sample, then pause for review.
 
 ## Phase 7 — Build the analytics aggregation and partitioned output
 
-- [ ] Define the grain and business meaning of the analytics-ready table.
-- [ ] Implement CMA × dwelling type × time rollups and trend/anomaly measures as testable transformations separate from cleaning.
-- [ ] Add permits and price-index joins with explicit CMA/month keys, coverage flags, and unmatched-row handling.
-- [ ] Write curated Parquet output with a justified date partition.
-- [ ] Add aggregation and partition-layout tests.
-- [ ] Inspect representative output and partition sizes, then pause for review.
+- [x] Define the grain and business meaning of the analytics-ready table.
+- [x] Implement CMA × dwelling type × time rollups and trend/anomaly measures as testable transformations separate from cleaning.
+- [x] Add permits and price-index joins with explicit CMA/month keys, coverage flags, and unmatched-row handling.
+- [x] Write curated Parquet output with a justified date partition.
+- [x] Add aggregation and partition-layout tests.
+- [x] Inspect representative output and partition sizes, then pause for review.
 
 ## Phase 8 — Add validation and assemble the local pipeline
 
