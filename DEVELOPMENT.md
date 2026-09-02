@@ -94,6 +94,22 @@ prints one clean row count per source. It does not download data, aggregate the
 facts, write curated output, or contact a cloud service. See
 `TRANSFORMATION_CONTRACT.md` for the source grains and semantic rules.
 
+## Build the analytics-ready Parquet fact
+
+Run the separate Phase 7 aggregation after the development snapshots exist:
+
+```bash
+uv run housing-elt aggregate --profile development
+```
+
+This cleans the selected sources, rolls them up to month × CMA × canonical
+dwelling type, adds backward-looking trend/anomaly measures, and replaces the
+generated `data/curated/housing_monthly/` Parquet dataset. Output is partitioned
+by reference year to avoid tiny monthly files. The development profile writes
+explicit missing-permit coverage because it deliberately excludes that large
+archive. No network or cloud service is contacted. See
+`ANALYTICS_CONTRACT.md` for field meanings, joins, and partition reasoning.
+
 Do not install project dependencies into the system Python. When dependencies
 change, run `uv lock` intentionally and review the resulting `uv.lock` diff.
 CI and reproducible local runs should use `uv sync --locked`, which fails when

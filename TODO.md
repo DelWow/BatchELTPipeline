@@ -56,12 +56,12 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 7 — Build the analytics aggregation and partitioned output
 
-- [ ] Define the grain and business meaning of the analytics-ready table.
-- [ ] Implement CMA × dwelling type × time rollups and trend/anomaly measures as testable transformations separate from cleaning.
-- [ ] Add permits and price-index joins with explicit CMA/month keys, coverage flags, and unmatched-row handling.
-- [ ] Write curated Parquet output with a justified date partition.
-- [ ] Add aggregation and partition-layout tests.
-- [ ] Inspect representative output and partition sizes, then pause for review.
+- [x] Define the grain and business meaning of the analytics-ready table.
+- [x] Implement CMA × dwelling type × time rollups and trend/anomaly measures as testable transformations separate from cleaning.
+- [x] Add permits and price-index joins with explicit CMA/month keys, coverage flags, and unmatched-row handling.
+- [x] Write curated Parquet output with a justified date partition.
+- [x] Add aggregation and partition-layout tests.
+- [x] Inspect representative output and partition sizes, then pause for review.
 
 ## Phase 8 — Add validation and assemble the local pipeline
 

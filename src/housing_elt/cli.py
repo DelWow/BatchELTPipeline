@@ -52,6 +52,25 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="source registry path (default: <project-root>/config/sources.toml)",
     )
+    aggregate_parser = subparsers.add_parser(
+        "aggregate",
+        help="build and write the partitioned analytics-ready housing fact",
+    )
+    aggregate_parser.add_argument(
+        "--profile",
+        default="development",
+        help="source profile from config/sources.toml (default: development)",
+    )
+    aggregate_parser.add_argument(
+        "--registry",
+        type=Path,
+        help="source registry path (default: <project-root>/config/sources.toml)",
+    )
+    aggregate_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Parquet dataset path (default: data/curated/housing_monthly)",
+    )
     return parser
 
 
@@ -154,6 +173,96 @@ def main(argv: Sequence[str] | None = None) -> int:
             logging.getLogger(__name__).error("cleaning_failed reason=%s", error)
             return 1
         finally:
+            if spark is not None:
+                spark.stop()
+        return 0
+
+    if args.command == "aggregate":
+        from pyspark import StorageLevel
+        from pyspark.errors import PySparkException
+        from pyspark.sql import functions as F
+
+        from housing_elt.analytics import build_analytics_fact, write_analytics_fact
+        from housing_elt.analytics.errors import AnalyticsError
+        from housing_elt.spark import create_local_spark
+        from housing_elt.transformation.errors import TransformationError
+        from housing_elt.transformation.pipeline import clean_profile
+
+        try:
+            settings = load_settings()
+        except SettingsError as error:
+            parser.error(str(error))
+
+        logging.basicConfig(
+            level=getattr(logging, settings.log_level),
+            format="%(asctime)s level=%(levelname)s %(name)s %(message)s",
+        )
+        registry_path = args.registry or settings.project_root / "config/sources.toml"
+        if not registry_path.is_absolute():
+            registry_path = settings.project_root / registry_path
+        output_path = args.output or settings.curated_data_dir / "housing_monthly"
+        if not output_path.is_absolute():
+            output_path = settings.project_root / output_path
+
+        spark = None
+        fact = None
+        try:
+            registry = load_source_registry(registry_path.resolve())
+            spark = create_local_spark("canadian-housing-analytics")
+            clean_frames = clean_profile(
+                spark,
+                registry,
+                args.profile,
+                settings.raw_data_dir,
+                settings.interim_data_dir,
+            )
+            fact = build_analytics_fact(clean_frames).persist(
+                StorageLevel.MEMORY_AND_DISK
+            )
+            write_analytics_fact(fact, output_path.resolve())
+            summary = fact.agg(
+                F.count("*").alias("rows"),
+                F.countDistinct("reference_year").alias("years"),
+                F.sum(
+                    F.when(F.col("starts_anomaly_flag") == F.lit(True), 1).otherwise(0)
+                ).alias("anomalies"),
+                F.sum(
+                    F.when(
+                        F.col("has_activity_data") & ~F.col("has_market_data"), 1
+                    ).otherwise(0)
+                ).alias("activity_only_rows"),
+                F.sum(
+                    F.when(
+                        ~F.col("has_activity_data") & F.col("has_market_data"), 1
+                    ).otherwise(0)
+                ).alias("market_only_rows"),
+                F.sum(F.when(~F.col("has_price_index_data"), 1).otherwise(0)).alias(
+                    "missing_price_rows"
+                ),
+                F.sum(F.when(~F.col("has_permit_data"), 1).otherwise(0)).alias(
+                    "missing_permit_rows"
+                ),
+            ).first()
+            print(
+                f"analytics_rows={summary.rows} years={summary.years} "
+                f"anomalies={summary.anomalies} "
+                f"activity_only_rows={summary.activity_only_rows} "
+                f"market_only_rows={summary.market_only_rows} "
+                f"missing_price_rows={summary.missing_price_rows} "
+                f"missing_permit_rows={summary.missing_permit_rows} "
+                f"output={output_path.resolve()}"
+            )
+        except (
+            AnalyticsError,
+            PySparkException,
+            RegistryError,
+            TransformationError,
+        ) as error:
+            logging.getLogger(__name__).error("aggregation_failed reason=%s", error)
+            return 1
+        finally:
+            if fact is not None:
+                fact.unpersist()
             if spark is not None:
                 spark.stop()
         return 0
