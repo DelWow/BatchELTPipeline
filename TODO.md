@@ -65,14 +65,14 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 8 — Add validation and assemble the local pipeline
 
-- [ ] Implement schema and required-column validation.
-- [ ] Implement row-count and key-column null-threshold validation.
-- [ ] Add reconciliation checks between clean input and aggregated output where meaningful.
-- [ ] Make validation failures stop the pipeline before any load step and log actionable reasons.
-- [ ] Add validation success and failure-path unit tests.
-- [ ] Assemble the ingestion, cleaning, aggregation, output, and validation steps behind one local entry point.
-- [ ] Run the local pipeline against the development sample and inspect representative output.
-- [ ] Pause for review.
+- [x] Implement schema and required-column validation.
+- [x] Implement row-count and key-column null-threshold validation.
+- [x] Add reconciliation checks between clean input and aggregated output where meaningful.
+- [x] Make validation failures stop the pipeline before any load step and log actionable reasons.
+- [x] Add validation success and failure-path unit tests.
+- [x] Assemble the ingestion, cleaning, aggregation, output, and validation steps behind one local entry point.
+- [x] Run the local pipeline against the development sample and inspect representative output.
+- [x] Pause for review.
 
 ## Phase 9 — Design the Snowflake loading approach and schema
 
