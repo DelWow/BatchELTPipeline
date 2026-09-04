@@ -76,12 +76,12 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 9 — Design the Snowflake loading approach and schema
 
-- [ ] Compare `snowflake-connector-python` with the Spark–Snowflake connector for this pipeline.
-- [ ] Choose and document the loading approach.
-- [ ] Design staging and final table schemas, column types, keys, and any clustering choice.
-- [ ] Define the idempotent staging and final-table merge/replace strategy.
-- [ ] Add reviewed, repeatable SQL DDL for tables and required objects.
-- [ ] Review the design without contacting Snowflake, then pause.
+- [x] Compare `snowflake-connector-python` with the Spark–Snowflake connector for this pipeline.
+- [x] Choose and document the loading approach.
+- [x] Design staging and final table schemas, column types, keys, and any clustering choice.
+- [x] Define the idempotent staging and final-table merge/replace strategy.
+- [x] Add reviewed, repeatable SQL DDL for tables and required objects.
+- [x] Review the design without contacting Snowflake, then pause.
 
 ## Phase 10 — Implement and verify the Snowflake loader
 
