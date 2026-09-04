@@ -1,0 +1,11 @@
+# Allowlist the only inputs used by the two explicit COPY instructions. Starting
+# from ** is safer than trying to enumerate every future secret, cache, or data
+# format that should not enter the build context.
+**
+!pyproject.toml
+!uv.lock
+!.python-version
+!src/
+!src/**
+!config/
+!config/**

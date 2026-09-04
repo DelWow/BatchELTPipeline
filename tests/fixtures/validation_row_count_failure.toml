@@ -1,0 +1,28 @@
+# Container smoke-test policy. All production validation semantics remain the
+# same; only the expected count is intentionally one row above the 360-row
+# development fact so the command must fail closed.
+contract_version = 1
+
+[profiles.development]
+min_rows = 361
+max_rows = 361
+key_columns = ["reference_month", "cma_code", "dwelling_type"]
+allowed_dwelling_types = [
+    "total",
+    "single_detached",
+    "semi_detached",
+    "row",
+    "apartment_and_other",
+]
+require_complete_dwelling_set = true
+max_duplicate_rows = 0
+max_market_mismatch_fraction = 0.0
+max_component_mismatch_fraction = 0.0
+
+[profiles.development.null_thresholds]
+housing_starts = 0.0
+housing_completions = 0.0
+housing_under_construction = 0.0
+market_starts_total = 0.0
+new_housing_price_index = 0.0
+residential_permit_value_dollars = 1.0

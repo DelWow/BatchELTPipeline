@@ -95,11 +95,11 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 11 — Containerize the batch job
 
-- [ ] Add a lean, pinned Dockerfile for a single-node Spark job and document the base-image choice.
-- [ ] Add a `.dockerignore` so local data, output, secrets, and caches are excluded from the build context.
-- [ ] Build the image locally.
-- [ ] Run the small-sample pipeline in the container and verify output and failure codes.
-- [ ] Pause for review.
+- [x] Add a lean, pinned Dockerfile for a single-node Spark job and document the base-image choice.
+- [x] Add a `.dockerignore` so local data, output, secrets, and caches are excluded from the build context.
+- [x] Build the image locally.
+- [x] Run the small-sample pipeline in the container and verify output and failure codes.
+- [x] Pause for review.
 
 ## Phase 12 — Schedule and verify the job on local Kubernetes
 

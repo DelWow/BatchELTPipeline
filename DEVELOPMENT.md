@@ -11,7 +11,7 @@ maintaining separate frozen requirements files.
 Python 3.11 is pinned in `.python-version`. Using one Python minor version in
 development, tests, and the future container reduces the risk of driver and
 executor differences in PySpark. PySpark 4.2 is bounded to its reviewed minor
-line; the Snowflake client will be added only when its design is reviewed.
+line; the Snowflake connector is bounded to its reviewed stable major line.
 
 `ruff` provides both formatting and linting in one fast tool. `pytest` is used
 because fixtures and parametrization make data-transformation edge cases easy
