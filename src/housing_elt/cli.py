@@ -71,6 +71,40 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Parquet dataset path (default: data/curated/housing_monthly)",
     )
+    aggregate_parser.add_argument(
+        "--validation-contract",
+        type=Path,
+        help="validation policy path (default: config/validation.toml)",
+    )
+    run_parser = subparsers.add_parser(
+        "run",
+        help="run ingestion through validated local Parquet publication",
+    )
+    run_parser.add_argument(
+        "--profile",
+        default="development",
+        help="source/validation profile (default: development)",
+    )
+    run_parser.add_argument(
+        "--registry",
+        type=Path,
+        help="source registry path (default: <project-root>/config/sources.toml)",
+    )
+    run_parser.add_argument(
+        "--validation-contract",
+        type=Path,
+        help="validation policy path (default: config/validation.toml)",
+    )
+    run_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Parquet dataset path (default: data/curated/housing_monthly)",
+    )
+    run_parser.add_argument(
+        "--skip-ingestion",
+        action="store_true",
+        help="use existing immutable raw snapshots without contacting StatsCan",
+    )
     return parser
 
 
@@ -177,16 +211,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 spark.stop()
         return 0
 
-    if args.command == "aggregate":
-        from pyspark import StorageLevel
+    if args.command in {"aggregate", "run"}:
         from pyspark.errors import PySparkException
-        from pyspark.sql import functions as F
 
-        from housing_elt.analytics import build_analytics_fact, write_analytics_fact
         from housing_elt.analytics.errors import AnalyticsError
+        from housing_elt.pipeline import run_local_pipeline
         from housing_elt.spark import create_local_spark
         from housing_elt.transformation.errors import TransformationError
-        from housing_elt.transformation.pipeline import clean_profile
+        from housing_elt.validation.config import load_validation_contract
+        from housing_elt.validation.errors import (
+            DataValidationError,
+            ValidationContractError,
+        )
 
         try:
             settings = load_settings()
@@ -200,69 +236,58 @@ def main(argv: Sequence[str] | None = None) -> int:
         registry_path = args.registry or settings.project_root / "config/sources.toml"
         if not registry_path.is_absolute():
             registry_path = settings.project_root / registry_path
+        validation_path = (
+            args.validation_contract or settings.project_root / "config/validation.toml"
+        )
+        if not validation_path.is_absolute():
+            validation_path = settings.project_root / validation_path
         output_path = args.output or settings.curated_data_dir / "housing_monthly"
         if not output_path.is_absolute():
             output_path = settings.project_root / output_path
 
         spark = None
-        fact = None
         try:
             registry = load_source_registry(registry_path.resolve())
-            spark = create_local_spark("canadian-housing-analytics")
-            clean_frames = clean_profile(
+            validation_contract = load_validation_contract(validation_path.resolve())
+            policy = validation_contract.profile(args.profile)
+            spark = create_local_spark("canadian-housing-pipeline")
+            result = run_local_pipeline(
                 spark,
                 registry,
+                settings,
                 args.profile,
-                settings.raw_data_dir,
-                settings.interim_data_dir,
+                policy,
+                output_path.resolve(),
+                ingest=(args.command == "run" and not args.skip_ingestion),
             )
-            fact = build_analytics_fact(clean_frames).persist(
-                StorageLevel.MEMORY_AND_DISK
-            )
-            write_analytics_fact(fact, output_path.resolve())
-            summary = fact.agg(
-                F.count("*").alias("rows"),
-                F.countDistinct("reference_year").alias("years"),
-                F.sum(
-                    F.when(F.col("starts_anomaly_flag") == F.lit(True), 1).otherwise(0)
-                ).alias("anomalies"),
-                F.sum(
-                    F.when(
-                        F.col("has_activity_data") & ~F.col("has_market_data"), 1
-                    ).otherwise(0)
-                ).alias("activity_only_rows"),
-                F.sum(
-                    F.when(
-                        ~F.col("has_activity_data") & F.col("has_market_data"), 1
-                    ).otherwise(0)
-                ).alias("market_only_rows"),
-                F.sum(F.when(~F.col("has_price_index_data"), 1).otherwise(0)).alias(
-                    "missing_price_rows"
-                ),
-                F.sum(F.when(~F.col("has_permit_data"), 1).otherwise(0)).alias(
-                    "missing_permit_rows"
-                ),
-            ).first()
+            for ingestion_result in result.ingestion_results:
+                print(
+                    f"{ingestion_result.source_id}: {ingestion_result.status} "
+                    f"sha256={ingestion_result.sha256}"
+                )
+            metrics = result.validation_report.metrics
             print(
-                f"analytics_rows={summary.rows} years={summary.years} "
-                f"anomalies={summary.anomalies} "
-                f"activity_only_rows={summary.activity_only_rows} "
-                f"market_only_rows={summary.market_only_rows} "
-                f"missing_price_rows={summary.missing_price_rows} "
-                f"missing_permit_rows={summary.missing_permit_rows} "
-                f"output={output_path.resolve()}"
+                f"validation=passed analytics_rows={metrics['row_count']} "
+                f"years={metrics['distinct_years']} "
+                f"anomalies={metrics['anomaly_rows']} "
+                f"activity_only_rows={metrics['activity_only_rows']} "
+                f"market_only_rows={metrics['market_only_rows']} "
+                f"missing_price_rows={metrics['missing_price_rows']} "
+                f"missing_permit_rows={metrics['missing_permit_rows']} "
+                f"output={result.output_path}"
             )
         except (
             AnalyticsError,
+            DataValidationError,
+            IngestionError,
             PySparkException,
             RegistryError,
             TransformationError,
+            ValidationContractError,
         ) as error:
-            logging.getLogger(__name__).error("aggregation_failed reason=%s", error)
+            logging.getLogger(__name__).error("pipeline_failed reason=%s", error)
             return 1
         finally:
-            if fact is not None:
-                fact.unpersist()
             if spark is not None:
                 spark.stop()
         return 0

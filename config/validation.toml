@@ -1,0 +1,58 @@
+# Versioned quality gates for the analytics fact. Thresholds differ by profile
+# because the development slice has deliberately complete core coverage but no
+# building-permits archive, while the broader source tables have differing CMA
+# coverage histories.
+contract_version = 1
+
+[profiles.development]
+min_rows = 360
+max_rows = 360
+key_columns = ["reference_month", "cma_code", "dwelling_type"]
+allowed_dwelling_types = [
+    "total",
+    "single_detached",
+    "semi_detached",
+    "row",
+    "apartment_and_other",
+]
+require_complete_dwelling_set = true
+max_duplicate_rows = 0
+max_market_mismatch_fraction = 0.0
+max_component_mismatch_fraction = 0.0
+
+[profiles.development.null_thresholds]
+housing_starts = 0.0
+housing_completions = 0.0
+housing_under_construction = 0.0
+market_starts_total = 0.0
+new_housing_price_index = 0.0
+# The development ingestion profile deliberately excludes this large archive.
+residential_permit_value_dollars = 1.0
+
+[profiles.full]
+# The core tables cover roughly 35 CMAs × 5 dwelling types × 120 months. A
+# range allows geography-definition revisions without pretending the exact row
+# count is stable forever; duplicate and reconciliation gates remain strict.
+min_rows = 15000
+max_rows = 30000
+key_columns = ["reference_month", "cma_code", "dwelling_type"]
+allowed_dwelling_types = [
+    "total",
+    "single_detached",
+    "semi_detached",
+    "row",
+    "apartment_and_other",
+]
+require_complete_dwelling_set = true
+max_duplicate_rows = 0
+max_market_mismatch_fraction = 0.0
+max_component_mismatch_fraction = 0.0
+
+[profiles.full.null_thresholds]
+housing_starts = 0.01
+housing_completions = 0.01
+housing_under_construction = 0.01
+market_starts_total = 0.01
+# NHPI and permits do not publish every CMA represented in the CMHC tables.
+new_housing_price_index = 0.50
+residential_permit_value_dollars = 0.50

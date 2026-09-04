@@ -103,12 +103,35 @@ uv run housing-elt aggregate --profile development
 ```
 
 This cleans the selected sources, rolls them up to month × CMA × canonical
-dwelling type, adds backward-looking trend/anomaly measures, and replaces the
-generated `data/curated/housing_monthly/` Parquet dataset. Output is partitioned
-by reference year to avoid tiny monthly files. The development profile writes
+dwelling type, adds backward-looking trend/anomaly measures, validates every
+configured quality gate, and only then replaces the generated
+`data/curated/housing_monthly/` Parquet dataset. Output is partitioned by
+reference year to avoid tiny monthly files. The development profile writes
 explicit missing-permit coverage because it deliberately excludes that large
-archive. No network or cloud service is contacted. See
-`ANALYTICS_CONTRACT.md` for field meanings, joins, and partition reasoning.
+archive. No network or cloud service is contacted. See `ANALYTICS_CONTRACT.md`
+for field meanings, joins, and partition reasoning.
+
+## Run the assembled local pipeline
+
+The single pipeline entry point includes idempotent ingestion, cleaning,
+aggregation, validation, and publication:
+
+```bash
+uv run housing-elt run --profile development
+```
+
+This contacts only the public Statistics Canada endpoints to check/download
+immutable source snapshots. It does not use Snowflake or any paid cloud
+resource. For a repeatable offline run after ingestion has already succeeded:
+
+```bash
+uv run housing-elt run --profile development --skip-ingestion
+```
+
+Both commands load `config/validation.toml`. A failed schema, row-count, null,
+key, dwelling-domain, or reconciliation check exits non-zero and prevents the
+Parquet writer from running. See `VALIDATION_CONTRACT.md` for exact semantics
+and the rationale behind profile-specific thresholds.
 
 Do not install project dependencies into the system Python. When dependencies
 change, run `uv lock` intentionally and review the resulting `uv.lock` diff.
