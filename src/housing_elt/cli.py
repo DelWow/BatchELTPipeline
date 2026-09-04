@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 from collections.abc import Sequence
+from functools import partial
 from pathlib import Path
 
 from housing_elt.config import SettingsError, load_settings
@@ -104,6 +105,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip-ingestion",
         action="store_true",
         help="use existing immutable raw snapshots without contacting StatsCan",
+    )
+    run_parser.add_argument(
+        "--load-snowflake",
+        action="store_true",
+        help=(
+            "after validation and local publication, load Snowflake using "
+            "HOUSING_ELT_SNOWFLAKE_* environment variables"
+        ),
     )
     return parser
 
@@ -216,6 +225,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         from housing_elt.analytics.errors import AnalyticsError
         from housing_elt.pipeline import run_local_pipeline
+        from housing_elt.snowflake.config import (
+            SnowflakeConfigurationError,
+            load_snowflake_settings,
+        )
+        from housing_elt.snowflake.errors import SnowflakeLoadError
+        from housing_elt.snowflake.loader import load_analytics_fact
         from housing_elt.spark import create_local_spark
         from housing_elt.transformation.errors import TransformationError
         from housing_elt.validation.config import load_validation_contract
@@ -250,6 +265,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             registry = load_source_registry(registry_path.resolve())
             validation_contract = load_validation_contract(validation_path.resolve())
             policy = validation_contract.profile(args.profile)
+            snowflake_publisher = None
+            if getattr(args, "load_snowflake", False):
+                snowflake_settings = load_snowflake_settings()
+                snowflake_publisher = partial(
+                    load_analytics_fact, settings=snowflake_settings
+                )
+
             spark = create_local_spark("canadian-housing-pipeline")
             result = run_local_pipeline(
                 spark,
@@ -259,6 +281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 policy,
                 output_path.resolve(),
                 ingest=(args.command == "run" and not args.skip_ingestion),
+                snowflake_publisher=snowflake_publisher,
             )
             for ingestion_result in result.ingestion_results:
                 print(
@@ -276,12 +299,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"missing_permit_rows={metrics['missing_permit_rows']} "
                 f"output={result.output_path}"
             )
+            if result.snowflake_load_result is not None:
+                load_result = result.snowflake_load_result
+                print(
+                    f"snowflake=published batch_id={load_result.batch_id} "
+                    f"profile={load_result.validation_profile} "
+                    f"reference_start={load_result.reference_start} "
+                    f"reference_end={load_result.reference_end} "
+                    f"rows={load_result.published_row_count}"
+                )
         except (
             AnalyticsError,
             DataValidationError,
             IngestionError,
             PySparkException,
             RegistryError,
+            SnowflakeConfigurationError,
+            SnowflakeLoadError,
             TransformationError,
             ValidationContractError,
         ) as error:
