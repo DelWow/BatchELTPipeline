@@ -85,13 +85,13 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 10 — Implement and verify the Snowflake loader
 
-- [ ] Implement credential loading from environment variables; never store secrets in the repository.
-- [ ] Implement the staging load and final-table merge/replace strategy from Phase 9.
-- [ ] Ensure validation must succeed before the loader can run.
-- [ ] Add mocked unit tests for load logic, idempotency, and failure behavior.
+- [x] Implement credential loading from environment variables; never store secrets in the repository.
+- [x] Implement the staging load and final-table merge/replace strategy from Phase 9.
+- [x] Ensure validation must succeed before the loader can run.
+- [x] Add mocked unit tests for load logic, idempotency, and failure behavior.
 - [ ] **Decision gate:** obtain approval before connecting to or provisioning a real Snowflake account, warehouse, database, schema, stage, or other billable resource.
 - [ ] If approved, run a bounded integration test and verify source/target counts.
-- [ ] Pause for review.
+- [x] Pause for review.
 
 ## Phase 11 — Containerize the batch job
 

@@ -9,6 +9,10 @@ description = "Batch ELT pipeline for Canadian metropolitan housing indicators"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "httpx>=0.28,<1",
+    # The modeled fact is compact, so bounded Python-connector batches avoid
+    # adding a Spark/JDBC/Scala compatibility surface solely for the final load.
+    # Stay on the stable 4.x line while Connector 5.x is a release candidate.
+    "snowflake-connector-python>=4.7.3,<5",
     # Spark runs in local mode during development and uses the same DataFrame
     # code in the later container/Kubernetes phases. A minor-version ceiling
     # avoids silently changing Spark SQL behavior on a routine lock refresh.

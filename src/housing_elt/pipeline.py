@@ -13,6 +13,7 @@ from housing_elt.analytics import build_analytics_fact, write_analytics_fact
 from housing_elt.config import PipelineSettings
 from housing_elt.ingestion.registry import SourceRegistry
 from housing_elt.ingestion.statcan import IngestionResult, StatCanIngestor
+from housing_elt.snowflake.loader import SnowflakeLoadResult
 from housing_elt.transformation.pipeline import clean_profile
 from housing_elt.validation import ValidationPolicy, validate_analytics_fact
 from housing_elt.validation.report import ValidationReport
@@ -25,6 +26,7 @@ class LocalPipelineResult:
     output_path: Path
     validation_report: ValidationReport
     ingestion_results: tuple[IngestionResult, ...]
+    snowflake_load_result: SnowflakeLoadResult | None
 
 
 def validate_and_publish(
@@ -49,6 +51,9 @@ def run_local_pipeline(
     output_path: Path,
     *,
     ingest: bool,
+    snowflake_publisher: (
+        Callable[[DataFrame, ValidationReport], SnowflakeLoadResult] | None
+    ) = None,
 ) -> LocalPipelineResult:
     """Run ingestion (optional offline), cleaning, aggregation, validation, output."""
     ingestion_results: tuple[IngestionResult, ...] = ()
@@ -66,10 +71,18 @@ def run_local_pipeline(
     fact = build_analytics_fact(clean_frames).persist(StorageLevel.MEMORY_AND_DISK)
     try:
         report = validate_and_publish(fact, policy, output_path)
+        # The callback receives the report produced for this exact persisted
+        # DataFrame. It is intentionally unreachable when validation raises.
+        snowflake_result = (
+            snowflake_publisher(fact, report)
+            if snowflake_publisher is not None
+            else None
+        )
     finally:
         fact.unpersist()
     return LocalPipelineResult(
         output_path=output_path,
         validation_report=report,
         ingestion_results=ingestion_results,
+        snowflake_load_result=snowflake_result,
     )
