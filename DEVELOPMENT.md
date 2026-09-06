@@ -9,7 +9,7 @@ those direct constraints, giving repeatable environments without manually
 maintaining separate frozen requirements files.
 
 Python 3.11 is pinned in `.python-version`. Using one Python minor version in
-development, tests, and the future container reduces the risk of driver and
+development, tests, and the container reduces the risk of driver and
 executor differences in PySpark. PySpark 4.2 is bounded to its reviewed minor
 line; the Snowflake connector is bounded to its reviewed stable major line.
 
@@ -20,7 +20,7 @@ to express without coupling tests to the pipeline entry point.
 ## Prerequisites
 
 - `uv` 0.12 or a compatible later 0.x release
-- Java 17 or later once PySpark is introduced
+- Java 17 or later for PySpark
 
 No global Python packages or shell configuration changes are required. If
 Python 3.11 is not already installed, `uv` can place its managed interpreter in

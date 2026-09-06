@@ -3,7 +3,7 @@
 Phase 11 packages the existing local-mode Spark application as one container.
 It does not create a Spark cluster: the driver and two local worker threads run
 in one process tree, which is proportional to this portfolio pipeline's serving
-fact and keeps the later Kubernetes CronJob understandable.
+fact and keeps the Kubernetes CronJob understandable.
 
 ## Image choices
 

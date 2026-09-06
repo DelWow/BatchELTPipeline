@@ -114,13 +114,13 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 13 — Portfolio documentation and final review
 
-- [ ] Write the project overview and business/analytical use case.
-- [ ] Add a Mermaid or ASCII architecture diagram.
-- [ ] Document prerequisites and exact local end-to-end commands.
-- [ ] Explain component, schema, partitioning, validation, connector, container, and Kubernetes choices.
-- [ ] Document secrets handling, cost boundaries, known limitations, and production-scale improvements.
-- [ ] Add a troubleshooting section and expected sample outputs.
-- [ ] Run formatting, linting, unit tests, local sample execution, container execution, and Kubernetes smoke checks.
-- [ ] Review the repository for secrets, generated data, stale instructions, and unclear interview talking points.
-- [ ] Show final `git status`/diff if Git has been initialized; leave all changes uncommitted unless explicitly told "commit this".
-- [ ] Pause for final owner review.
+- [x] Write the project overview and business/analytical use case.
+- [x] Add a Mermaid or ASCII architecture diagram.
+- [x] Document prerequisites and exact local end-to-end commands.
+- [x] Explain component, schema, partitioning, validation, connector, container, and Kubernetes choices.
+- [x] Document secrets handling, cost boundaries, known limitations, and production-scale improvements.
+- [x] Add a troubleshooting section and expected sample outputs.
+- [x] Run formatting, linting, unit tests, local sample execution, container execution, and Kubernetes smoke checks.
+- [x] Review the repository for secrets, generated data, stale instructions, and unclear interview talking points.
+- [x] Show final `git status`/diff if Git has been initialized; leave all changes uncommitted unless explicitly told "commit this".
+- [x] Pause for final owner review.
