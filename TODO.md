@@ -103,14 +103,14 @@ This checklist is intentionally split into small, reviewable units. Each checked
 
 ## Phase 12 — Schedule and verify the job on local Kubernetes
 
-- [ ] Confirm `kind` or `minikube` (default recommendation: `kind`, subject to review).
-- [ ] Add a namespace and non-secret runtime configuration manifest.
-- [ ] Add a documented Kubernetes Secret template without real credentials.
-- [ ] Add a commented CronJob manifest with resource requests/limits, retry policy, concurrency policy, and history limits.
-- [ ] Add local storage/data-mount handling appropriate to the selected local cluster.
-- [ ] Document how to load the local Docker image into the selected cluster.
-- [ ] Run the CronJob locally and verify pod completion, logs, outputs, and failed-validation behavior.
-- [ ] Pause for review.
+- [x] Confirm `kind` or `minikube` (selected `kind` for its Docker-native local workflow).
+- [x] Add a namespace and non-secret runtime configuration manifest.
+- [x] Add a documented Kubernetes Secret template without real credentials.
+- [x] Add a commented CronJob manifest with resource requests/limits, retry policy, concurrency policy, and history limits.
+- [x] Add local storage/data-mount handling appropriate to the selected local cluster.
+- [x] Document how to load the local Docker image into the local cluster.
+- [x] Run the CronJob locally and verify pod completion, logs, outputs, and failed-validation behavior.
+- [x] Pause for review.
 
 ## Phase 13 — Portfolio documentation and final review
 

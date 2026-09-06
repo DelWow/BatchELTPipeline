@@ -1,0 +1,16 @@
+# Non-secret runtime behavior belongs in a ConfigMap so the same image can be
+# promoted between environments without rebuilding it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: housing-elt-config
+  namespace: housing-elt
+  labels:
+    app.kubernetes.io/name: canadian-housing-elt
+data:
+  HOUSING_ELT_PROJECT_ROOT: /app
+  HOUSING_ELT_RAW_DATA_DIR: /app/data/raw
+  HOUSING_ELT_INTERIM_DATA_DIR: /app/data/interim
+  HOUSING_ELT_CURATED_DATA_DIR: /app/data/curated
+  HOUSING_ELT_CHECKPOINT_DIR: /app/data/checkpoints
+  HOUSING_ELT_LOG_LEVEL: INFO

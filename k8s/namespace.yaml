@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: housing-elt
+  labels:
+    app.kubernetes.io/name: canadian-housing-elt
+    app.kubernetes.io/part-of: housing-analytics

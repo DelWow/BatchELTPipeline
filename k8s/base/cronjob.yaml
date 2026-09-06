@@ -1,0 +1,112 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: housing-elt-monthly
+  namespace: housing-elt
+  labels:
+    app.kubernetes.io/name: canadian-housing-elt
+    app.kubernetes.io/component: batch-pipeline
+spec:
+  # Run at 11:00 UTC on the fifth day of each month, after the reference month
+  # closes and upstream releases commonly begin arriving.
+  schedule: "0 11 5 * *"
+  timeZone: Etc/UTC
+  # Missing a run by more than six hours is treated as stale; a later operator
+  # can launch a named Job deliberately after checking upstream availability.
+  startingDeadlineSeconds: 21600
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: canadian-housing-elt
+        app.kubernetes.io/component: batch-pipeline
+    spec:
+      # Retry transient process/node failures twice, but cap the whole attempt at
+      # 30 minutes so a stuck Spark JVM cannot occupy the schedule indefinitely.
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: canadian-housing-elt
+            app.kubernetes.io/component: batch-pipeline
+        spec:
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 30
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: housing-elt
+              image: canadian-housing-elt:local
+              # kind receives this local tag via `kind load docker-image`; Never
+              # prevents an accidental public-registry lookup for a local image.
+              imagePullPolicy: Never
+              args:
+                - run
+                - --profile
+                - development
+                - --skip-ingestion
+              envFrom:
+                - configMapRef:
+                    name: housing-elt-config
+              resources:
+                # local[2] can use two CPUs. A 1 GiB request/3 GiB limit leaves
+                # JVM headroom while making scheduling and capacity visible.
+                requests:
+                  cpu: 500m
+                  memory: 1Gi
+                limits:
+                  cpu: "2"
+                  memory: 3Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: raw-data
+                  mountPath: /app/data/raw
+                  readOnly: true
+                - name: interim-data
+                  mountPath: /app/data/interim
+                - name: curated-data
+                  mountPath: /app/data/curated
+                - name: checkpoints
+                  mountPath: /app/data/checkpoints
+                - name: spark-home
+                  mountPath: /home/pipeline
+                - name: temp
+                  mountPath: /tmp
+          volumes:
+            # The kind node exposes the host landing zone at this fixed path.
+            - name: raw-data
+              hostPath:
+                path: /var/local/housing-elt/raw
+                type: Directory
+            # These outputs are reproducible scratch state. In a production
+            # design, object storage and Snowflake replace node-local volumes.
+            - name: interim-data
+              emptyDir:
+                sizeLimit: 1Gi
+            - name: curated-data
+              emptyDir:
+                sizeLimit: 256Mi
+            - name: checkpoints
+              emptyDir:
+                sizeLimit: 64Mi
+            - name: spark-home
+              emptyDir:
+                sizeLimit: 128Mi
+            - name: temp
+              emptyDir:
+                sizeLimit: 1Gi
