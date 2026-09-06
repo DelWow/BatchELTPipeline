@@ -52,8 +52,8 @@ then passed to Snowflake. Validation failure occurs before connection creation.
   makes a retry converge on the same business rows.
 - A publication error causes an explicit rollback followed by a bounded
   `FAILED` audit message.
-- A second `STARTED` batch for the same profile is rejected. Phase 12 will add
-  Kubernetes `concurrencyPolicy: Forbid` as an outer scheduling guard.
+- A second `STARTED` batch for the same profile is rejected. Kubernetes
+  `concurrencyPolicy: Forbid` supplies an outer scheduling guard.
 
 Development and full-profile loads must target separate schemas (or separate
 databases containing the same schema name); alternating their windows in one

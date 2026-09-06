@@ -2,11 +2,11 @@
 
 ## Decision
 
-The project will use monthly Canadian housing-supply data centered on the
+The project uses monthly Canadian housing-supply data centered on the
 Canada Mortgage and Housing Corporation (CMHC) Starts and Completions Survey,
 enriched with a deliberately small set of related Statistics Canada indicators.
 
-This is an analytical, pre-aggregated dataset. The portfolio claim will be
+This is an analytical, pre-aggregated dataset. The portfolio claim is
 multi-source and multi-dimensional processing across years and geographies—not
 millions of household- or building-level events that these sources do not
 contain.
@@ -24,7 +24,7 @@ The initial source set is intentionally limited to four monthly tables:
 
 CMHC's [housing starts data page](https://www.cmhc-schl.gc.ca/professionals/housing-markets-data-and-research/housing-data/data-tables/housing-market-data/starts-completions-units-under-construction-geography)
 and [intended-market data page](https://www.cmhc-schl.gc.ca/professionals/housing-markets-data-and-research/housing-data/data-tables/housing-market-data/starts-completions-intended-market-cities)
-remain the methodology references. The pipeline will use Statistics Canada's
+remain the methodology references. The pipeline uses Statistics Canada's
 official distribution of the CMHC series because stable table identifiers,
 bulk downloads, and machine-readable metadata make backfills and reruns easier
 to reproduce than workbook sheet layouts. Direct CMHC exports may be used for

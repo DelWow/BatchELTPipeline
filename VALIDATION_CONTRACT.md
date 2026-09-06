@@ -74,5 +74,6 @@ optional ingestion
 `housing-elt aggregate` command also uses the same mandatory validation gate;
 it cannot bypass quality checks.
 
-This gate will also sit before the Snowflake loader in Phase 10. Phase 8 does
-not contact Snowflake or provision any paid resource.
+The same gate sits before the Snowflake loader. A validation failure prevents
+connection creation; local-only runs do not contact Snowflake or provision any
+paid resource.

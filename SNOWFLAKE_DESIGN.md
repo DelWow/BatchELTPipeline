@@ -1,12 +1,12 @@
 # Snowflake Load and Schema Design
 
-Phase 9 is a design-only phase. The SQL in `sql/` is reviewed but has not been
-executed, and no Snowflake account, warehouse, database, schema, or other paid
-resource has been contacted or created.
+Phase 9 defined this design and Phase 10 implemented its loader. The SQL in
+`sql/` has not been executed, and no Snowflake account, warehouse, database,
+schema, or other paid resource has been contacted or created.
 
 ## Connector decision
 
-The loader will use `snowflake-connector-python` with server-side `qmark`
+The loader uses `snowflake-connector-python` with server-side `qmark`
 binding and bounded `executemany()` batches.
 
 ### Why the Python connector fits this pipeline
@@ -15,14 +15,14 @@ binding and bounded `executemany()` batches.
   revisions, joining, and calculating windows. The resulting serving fact is
   compact—360 rows in development and expected to be only tens of thousands at
   the full ten-year/CMA scope.
-- Phase 10 can stream rows from Spark with `DataFrame.toLocalIterator()` and
-  form bounded batches. It will not call `collect()` on an unbounded frame.
+- The loader streams rows from Spark with `DataFrame.toLocalIterator()` and
+  forms bounded batches. It does not call `collect()` on an unbounded frame.
 - Server-side parameter binding keeps values separate from SQL text. Snowflake
   documents that `executemany()` can optimize sufficiently large server-bound
   batches through a temporary stage when the session has a current database
   and schema.
 - The Python connector adds one Python dependency and no Spark package, JDBC
-  driver, or Scala binary to the later container image.
+  driver, or Scala binary to the container image.
 - Explicit staging and publish SQL make transaction boundaries, reconciliation,
   and idempotency visible instead of hiding them behind `DataFrame.write`.
 
@@ -84,7 +84,7 @@ constraints are retained because Snowflake enforces them.
 
 One permanent row per attempted batch records status, profile/window, validation
 metrics, staged/published counts, timestamps, and any bounded error message.
-Phase 10 will use it for observable retries and troubleshooting, not as a source
+The loader uses it for observable retries and troubleshooting, not as a source
 of analytics data.
 
 Official references:
@@ -110,7 +110,7 @@ See [Snowflake numeric data types](https://docs.snowflake.com/en/sql-reference/d
 
 ## Idempotent loading and publication
 
-Phase 10 will follow this sequence only after Phase 8 validation succeeds:
+The implemented loader follows this sequence only after validation succeeds:
 
 1. Generate a UUID `LOAD_BATCH_ID` and insert an audit row with `STARTED`.
 2. Remove any staging rows for that same batch ID, then stream the validated
@@ -135,8 +135,8 @@ One Snowflake schema represents one deployment/profile scope: a development
 schema receives the development window and a production schema receives the
 full window. Alternating development and full profiles in the same target
 schema would make a window replacement semantically ambiguous and is not
-supported. Kubernetes will later use `concurrencyPolicy: Forbid`; Phase 10 will
-also refuse a second active audit batch for the same target/profile.
+supported. Kubernetes uses `concurrencyPolicy: Forbid`, and the loader also
+refuses a second active audit batch for the same target/profile.
 
 Snowflake recommends explicit transactions while leaving autocommit enabled;
 statements within `BEGIN TRANSACTION`/`COMMIT` remain atomic. See

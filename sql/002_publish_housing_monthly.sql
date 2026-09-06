@@ -1,4 +1,4 @@
--- Phase 10 will execute these DML statements one at a time through a Python
+-- The implemented loader executes these DML statements one at a time through a Python
 -- connector configured with paramstyle='qmark'. Each ? is a bound batch ID.
 -- The staged row insert itself uses executemany() and the same qmark binding.
 -- This file documents the exact final-publication transaction; it is not a
