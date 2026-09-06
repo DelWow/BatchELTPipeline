@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: housing-elt
+nameSuffix: -failure
+resources:
+  - ../base
+  - validation-configmap.yaml
+patches:
+  - target:
+      group: batch
+      version: v1
+      kind: CronJob
+      name: housing-elt-monthly
+    patch: |-
+      - op: add
+        path: /spec/suspend
+        value: true
+      - op: replace
+        path: /spec/jobTemplate/spec/backoffLimit
+        value: 0
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/containers/0/args/-
+        value: --validation-contract
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/containers/0/args/-
+        value: /app/smoke/validation.toml
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: validation-failure
+          mountPath: /app/smoke
+          readOnly: true
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/volumes/-
+        value:
+          name: validation-failure
+          configMap:
+            name: validation-row-count

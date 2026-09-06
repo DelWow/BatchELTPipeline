@@ -1,0 +1,14 @@
+# kind resolves this relative host path from the directory where `kind create`
+# runs. Run from the repository root so ./data/raw is the landing zone.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: housing-elt
+nodes:
+  - role: control-plane
+    # Match kind v0.32.0's reviewed Kubernetes release and pin the multi-arch
+    # node image so a future tag change cannot silently alter the cluster.
+    image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+    extraMounts:
+      - hostPath: ./data/raw
+        containerPath: /var/local/housing-elt/raw
+        readOnly: true
