@@ -1,126 +1,30 @@
-# Batch ELT Pipeline TODO
+# Project status
 
-This checklist is intentionally split into small, reviewable units. Each checked implementation item should be suitable for one focused future commit; Codex will not create commits unless explicitly asked to "commit this".
+## Complete
 
-## Phase 1 — Choose the dataset
+- [x] Select and document the CMHC/Statistics Canada sources.
+- [x] Set up the Python 3.11 environment, dependency lock, linting and tests.
+- [x] Implement streamed, immutable and idempotent source ingestion.
+- [x] Add explicit PySpark schemas and source-specific cleaning rules.
+- [x] Build the monthly CMA/dwelling analytics table and time features.
+- [x] Write year-partitioned Parquet output.
+- [x] Add schema, null, uniqueness, coverage and reconciliation checks.
+- [x] Implement the local end-to-end command and forced-failure tests.
+- [x] Design the Snowflake tables and transactional publication flow.
+- [x] Implement and mock-test the Snowflake loader.
+- [x] Build and test the non-root Docker image.
+- [x] Run success and failure Jobs on a local `kind` cluster.
+- [x] Document local, container, Kubernetes and Snowflake workflows.
 
-- [x] Inspect the workspace baseline (currently empty and not initialized as a Git repository).
-- [x] Compare 2–3 public datasets for scale, license, access, and analytical value.
-- [x] **Decision gate:** project owner selected CMHC Starts and Completions Survey data plus related Statistics Canada housing indicators.
-- [x] Record the selected source, license/terms, data window, expected scale, native file format, and analytical boundaries in `DATASET.md`.
+## Still optional
 
-## Phase 2 — Establish Python tooling and repository hygiene
+- [ ] Run a bounded Snowflake integration test after approving account and
+  warehouse usage.
+- [ ] Run the full profile, including the large building-permits archive.
+- [ ] Add CI for linting, tests and container checks.
+- [ ] Add persistent/object storage and external secrets for a non-local
+  deployment.
 
-- [x] Choose and document `pyproject.toml` plus `uv.lock` for direct constraints and reproducible dependency resolution.
-- [x] Add a Python 3.11 project-local `.venv` workflow in `DEVELOPMENT.md`.
-- [x] Add `.gitignore` rules for downloaded data, generated output, secrets, caches, and local tooling.
-- [x] Configure Ruff for formatting/linting and pytest as the test runner.
-- [x] Confirm Git was already initialized; do not initialize, stage, commit, push, or otherwise mutate Git state.
-- [x] Verify the locked Python environment and development tools can run, then pause for review.
-
-## Phase 3 — Create the project structure and configuration
-
-- [x] Create the minimal source, test, configuration, SQL, Kubernetes, and data directory structure.
-- [x] Add an installable `housing_elt` package and read-only `show-config` entry points without pipeline behavior.
-- [x] Add immutable typed configuration with safe local defaults and `HOUSING_ELT_` environment-variable overrides.
-- [x] Document which paths are inputs, generated outputs, versioned configuration, and intentionally excluded from Git.
-- [x] Verify package imports, both CLI entry points, configuration overrides, linting, formatting, and unit tests, then pause for review.
-
-## Phase 4 — Define the ingestion contract
-
-- [x] Record official PIDs, URLs, licences, monthly frequency, dimensions, native ZIP/CSV format, and source-specific availability in `config/sources.toml`.
-- [x] Define the 2024–2025 three-CMA development slice and source-specific full benchmark windows without treating cube datapoints as row-level events.
-- [x] Define immutable release/SHA-addressed raw paths and the source metadata plus generated manifest stored with every archive.
-- [x] Define WDS, HTTP, size, SHA-256, ZIP CRC/member, path-safety, metadata, and coverage integrity checks.
-- [x] Define bounded retry/timeout behavior, run-owned partial cleanup, atomic publication, idempotent skips, and non-destructive revision handling.
-- [x] Validate the source registry and ingestion contract, then pause for review.
-
-## Phase 5 — Implement and verify raw ingestion
-
-- [x] Implement registry-driven, streamed Statistics Canada downloads into `data/raw/` without changing the native ZIP format.
-- [x] Add release/SHA-addressed immutable publication, manifest verification, and idempotent rerun behavior.
-- [x] Add bounded timeout/retry behavior, actionable logs, run-owned partial cleanup, and atomic publication.
-- [x] Add mocked ingestion tests for success, retries, corrupt ZIP cleanup, unexpected hosts, idempotency, and local corruption.
-- [x] Run the development profile, independently verify all three ZIPs, and confirm the rerun reports `already_present` without archive downloads.
-- [x] Pause for review.
-
-## Phase 6 — Clean source observations with PySpark
-
-- [x] Define explicit raw and clean Spark schemas for each source-specific fact grain.
-- [x] Implement raw reads and type normalization as testable functions.
-- [x] Implement required-field and null handling as a separate transformation.
-- [x] Implement duplicate/overlapping-aggregate handling using documented dimension keys.
-- [x] Implement revision, status-symbol, geography, unit/scalar, and stock-versus-flow handling.
-- [x] Add focused unit tests for schema enforcement, nulls, duplicates, revisions, and semantic rules.
-- [x] Run the cleaning flow against the development sample, then pause for review.
-
-## Phase 7 — Build the analytics aggregation and partitioned output
-
-- [x] Define the grain and business meaning of the analytics-ready table.
-- [x] Implement CMA × dwelling type × time rollups and trend/anomaly measures as testable transformations separate from cleaning.
-- [x] Add permits and price-index joins with explicit CMA/month keys, coverage flags, and unmatched-row handling.
-- [x] Write curated Parquet output with a justified date partition.
-- [x] Add aggregation and partition-layout tests.
-- [x] Inspect representative output and partition sizes, then pause for review.
-
-## Phase 8 — Add validation and assemble the local pipeline
-
-- [x] Implement schema and required-column validation.
-- [x] Implement row-count and key-column null-threshold validation.
-- [x] Add reconciliation checks between clean input and aggregated output where meaningful.
-- [x] Make validation failures stop the pipeline before any load step and log actionable reasons.
-- [x] Add validation success and failure-path unit tests.
-- [x] Assemble the ingestion, cleaning, aggregation, output, and validation steps behind one local entry point.
-- [x] Run the local pipeline against the development sample and inspect representative output.
-- [x] Pause for review.
-
-## Phase 9 — Design the Snowflake loading approach and schema
-
-- [x] Compare `snowflake-connector-python` with the Spark–Snowflake connector for this pipeline.
-- [x] Choose and document the loading approach.
-- [x] Design staging and final table schemas, column types, keys, and any clustering choice.
-- [x] Define the idempotent staging and final-table merge/replace strategy.
-- [x] Add reviewed, repeatable SQL DDL for tables and required objects.
-- [x] Review the design without contacting Snowflake, then pause.
-
-## Phase 10 — Implement and verify the Snowflake loader
-
-- [x] Implement credential loading from environment variables; never store secrets in the repository.
-- [x] Implement the staging load and final-table merge/replace strategy from Phase 9.
-- [x] Ensure validation must succeed before the loader can run.
-- [x] Add mocked unit tests for load logic, idempotency, and failure behavior.
-- [ ] **Decision gate:** obtain approval before connecting to or provisioning a real Snowflake account, warehouse, database, schema, stage, or other billable resource.
-- [ ] If approved, run a bounded integration test and verify source/target counts.
-- [x] Pause for review.
-
-## Phase 11 — Containerize the batch job
-
-- [x] Add a lean, pinned Dockerfile for a single-node Spark job and document the base-image choice.
-- [x] Add a `.dockerignore` so local data, output, secrets, and caches are excluded from the build context.
-- [x] Build the image locally.
-- [x] Run the small-sample pipeline in the container and verify output and failure codes.
-- [x] Pause for review.
-
-## Phase 12 — Schedule and verify the job on local Kubernetes
-
-- [x] Confirm `kind` or `minikube` (selected `kind` for its Docker-native local workflow).
-- [x] Add a namespace and non-secret runtime configuration manifest.
-- [x] Add a documented Kubernetes Secret template without real credentials.
-- [x] Add a commented CronJob manifest with resource requests/limits, retry policy, concurrency policy, and history limits.
-- [x] Add local storage/data-mount handling appropriate to the selected local cluster.
-- [x] Document how to load the local Docker image into the local cluster.
-- [x] Run the CronJob locally and verify pod completion, logs, outputs, and failed-validation behavior.
-- [x] Pause for review.
-
-## Phase 13 — Portfolio documentation and final review
-
-- [x] Write the project overview and business/analytical use case.
-- [x] Add a Mermaid or ASCII architecture diagram.
-- [x] Document prerequisites and exact local end-to-end commands.
-- [x] Explain component, schema, partitioning, validation, connector, container, and Kubernetes choices.
-- [x] Document secrets handling, cost boundaries, known limitations, and production-scale improvements.
-- [x] Add a troubleshooting section and expected sample outputs.
-- [x] Run formatting, linting, unit tests, local sample execution, container execution, and Kubernetes smoke checks.
-- [x] Review the repository for secrets, generated data, stale instructions, and unclear interview talking points.
-- [x] Show final `git status`/diff if Git has been initialized; leave all changes uncommitted unless explicitly told "commit this".
-- [x] Pause for final owner review.
+The verified development profile remains the supported demo path. The first two
+items above use additional bandwidth or paid infrastructure and should not run
+implicitly.

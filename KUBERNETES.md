@@ -1,80 +1,82 @@
-# Local Kubernetes Runbook
+# Running on local Kubernetes
 
-Phase 12 uses `kind` because its Kubernetes nodes are ordinary Docker
-containers. It can load `canadian-housing-elt:local` without a registry, reuses
-Docker Desktop already required by Phase 11, and avoids the VM and image-daemon
-differences of minikube. No cloud cluster or paid resource is involved.
+This setup uses `kind`. Its nodes run as Docker containers, which makes it easy
+to reuse the local image without setting up a registry. Nothing here creates a
+cloud cluster.
 
-## Prerequisites
+## Requirements
 
-- Docker Desktop with at least 4 CPUs and 6 GiB memory available
-- `kind` v0.32.0
-- `kubectl` v1.36.1 (kept project-local below to match the cluster exactly)
+- Docker Desktop with roughly 4 CPUs and 6 GiB available
+- `kind` 0.32.0
+- `kubectl` 1.36.1
 
-This project keeps both tools local rather than installing them globally. For
-macOS arm64, run from the repository root and verify the published checksums:
+The following macOS arm64 commands install both Kubernetes tools under the
+ignored `.tools/` directory. The checksums are from their published releases.
 
 ```bash
 mkdir -p .tools
 curl -Lo .tools/kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-darwin-arm64
 echo "dca67911095a110c2b5c36e26df6cac860c602033e456c0db47be498cdef1ebb  .tools/kind" | shasum -a 256 -c
 chmod 0755 .tools/kind
+
 curl -Lo .tools/kubectl https://dl.k8s.io/release/v1.36.1/bin/darwin/arm64/kubectl
 echo "9092778abaef3079449da4cd70ded0e4be112480c93efcdeace3155968d1d133  .tools/kubectl" | shasum -a 256 -c
 chmod 0755 .tools/kubectl
 ```
 
-Use the appropriate official asset and checksum on another OS/architecture.
-`.tools/` is ignored and no shell configuration is changed. Pinning the client
-to the node version also keeps this runbook inside Kubernetes' supported
-`kubectl` version-skew range, regardless of another client installed globally.
+Use the matching official binaries and checksums on another operating system or
+architecture. Keeping `kubectl` at the node version also avoids client/server
+version-skew problems.
 
 ## Create the cluster
 
-Run from the repository root because kind resolves `./data/raw` in the cluster
-configuration against the current directory:
+Run this from the repository root. The cluster configuration resolves
+`./data/raw` relative to the current directory.
 
 ```bash
 .tools/kind create cluster --config k8s/kind-cluster.yaml
 .tools/kubectl cluster-info --context kind-housing-elt
 ```
 
-The single-node cluster is pinned to Kubernetes 1.36.1. kind passes the local
-raw landing directory into its node read-only; the Pod then mounts that node
-path read-only. Intermediate, curated, checkpoint, Spark-home, and temporary
-volumes are bounded `emptyDir` scratch space and disappear with each Pod.
+The cluster has one Kubernetes 1.36.1 control-plane node. `data/raw` is mounted
+read-only into that node and then read-only into the workload Pod.
 
-## Load the local image
+## Load the image
 
-Kubernetes cannot see images stored only in Docker Desktop's host image store.
-Load the Phase 11 image into the named kind node explicitly:
+An image in Docker Desktop's host store is not automatically visible inside a
+kind node. Load it explicitly:
 
 ```bash
 .tools/kind load docker-image canadian-housing-elt:local --name housing-elt
 docker exec housing-elt-control-plane crictl images | grep canadian-housing-elt
 ```
 
-The CronJob uses `imagePullPolicy: Never`, so a missing load fails visibly
-instead of silently trying a public registry.
+The CronJob uses `imagePullPolicy: Never`, so forgetting this step produces a
+clear local-image error instead of an attempted public pull.
 
-## Apply and inspect the scheduled workload
+## Apply the CronJob
 
 ```bash
 .tools/kubectl apply -k k8s
 .tools/kubectl -n housing-elt get cronjob housing-elt-monthly
-.tools/kubectl -n housing-elt describe cronjob housing-elt-monthly
 ```
 
-The schedule is 11:00 UTC on the fifth day of each month. `Forbid` prevents
-overlap, a six-hour deadline skips stale missed schedules, each Job can retry
-twice, and 30 minutes bounds an attempt. History limits plus a one-day TTL keep
-local cluster state bounded. The CronJob reads no Snowflake Secret and uses
-`--skip-ingestion`; it demonstrates scheduled transformation/validation from
-the already landed immutable snapshots.
+The schedule is 11:00 UTC on the fifth of each month. Overlapping runs are
+forbidden. A Job may retry twice, has a 30-minute deadline and is removed after
+one day. Requests are 500m CPU and 1 GiB memory; limits are 2 CPUs and 3 GiB.
 
-## Run and verify immediately
+The container runs as UID/GID 10001 with a read-only root filesystem, no added
+capabilities and no service-account token. Intermediate, curated, checkpoint,
+home and temporary paths use size-limited `emptyDir` volumes. Those outputs are
+temporary and disappear with the Pod.
 
-Create a one-off Job from the exact CronJob template instead of waiting for the
+The scheduled command includes `--skip-ingestion`. Raw snapshots must already
+exist on the host; the local CronJob is meant to exercise scheduling and
+failure handling, not act as an unattended production pipeline.
+
+## Run now
+
+Create a one-off Job from the same Pod template instead of waiting for the
 monthly schedule:
 
 ```bash
@@ -85,14 +87,13 @@ monthly schedule:
 .tools/kubectl -n housing-elt logs job/housing-elt-smoke
 ```
 
-Expected log summary: validation passes with 360 rows, two years, 15 anomaly
-flags, and 360 missing-permit rows by development-profile design.
+The verified run completed with 360 rows, two years and 15 anomaly flags.
 
-## Verify fail-closed validation
+## Check the failure path
 
-The smoke overlay produces a separately named, suspended CronJob with a
-test-only validation ConfigMap. It expects 361 rows, ensuring the actual
-360-row fact fails before publication:
+`k8s/smoke-failure` creates a second, suspended CronJob with a validation file
+that requires 361 rows. Its Jobs have no retry because the failure is
+deterministic.
 
 ```bash
 .tools/kubectl apply -k k8s/smoke-failure
@@ -103,38 +104,22 @@ test-only validation ConfigMap. It expects 361 rows, ensuring the actual
 .tools/kubectl -n housing-elt logs job/housing-elt-validation-failure
 ```
 
-Expected log: `row_count: observed 360; expected [361, 361]`. The overlay sets
-`backoffLimit: 0` to avoid repeating a deterministic validation failure.
+Expected error:
 
-## Verified local result
+```text
+row_count: observed 360; expected [361, 361]
+```
 
-The Phase 12 smoke run used kind v0.32.0, the project-local kubectl v1.36.1,
-and the pinned Kubernetes 1.36.1 node:
+## Snowflake credentials
 
-- `housing-elt-smoke` completed in 18 seconds; its Pod phase was `Succeeded`
-  with exit code 0 and no image pull.
-- The success log reported 360 analytics rows, two years, 15 anomaly flags,
-  and `/app/data/curated/housing_monthly`. That line is emitted only after the
-  year-partitioned Parquet writer returns successfully.
-- `housing-elt-validation-failure` reached the Job `Failed` condition with exit
-  code 1, zero container restarts, and the expected 360-versus-361 row-count
-  message.
-- No Snowflake Secret was created and neither workload used
-  `--load-snowflake`.
+`k8s/snowflake-secret.example.yaml` is a template and is not part of the main
+Kustomization. Do not put real values in that tracked file. If the live load is
+enabled later, create the Secret from a local secure source or an external
+secret manager, reference it from the workload, and add `--load-snowflake`.
 
-## Secrets and the Snowflake gate
+## Cleanup
 
-`k8s/snowflake-secret.example.yaml` is documentation only and is excluded from
-the main Kustomization. Do not edit it with real values or apply it. When a real
-Snowflake integration is approved, create the Secret from a secure local source
-or external secret manager, add `envFrom.secretRef`, and explicitly add
-`--load-snowflake` to the workload. Kubernetes Secrets require separate
-encryption-at-rest and rotation controls in production.
-
-## Local cleanup
-
-The commands below delete local smoke Jobs or the entire disposable cluster.
-Run them only when their outputs are no longer needed:
+These commands remove the smoke Jobs or the whole local cluster:
 
 ```bash
 .tools/kubectl -n housing-elt delete job housing-elt-smoke housing-elt-validation-failure

@@ -1,141 +1,90 @@
-# Statistics Canada Ingestion Contract
+# Ingestion contract
 
-## Purpose
+Ingestion downloads and preserves official Statistics Canada snapshots. It does
+not filter or normalize observations; Spark handles that later.
 
-This document freezes the behavior expected from the Phase 5 downloader before
-implementation. The contract covers acquisition and preservation of official
-source snapshots only. Filtering, schema normalization, annual unions, and
-analytics belong to later PySpark phases.
+`config/sources.toml` is the source of truth for product IDs, URLs, expected ZIP
+members, size limits and profile membership. The downloader does not maintain a
+second list in Python.
 
-The versioned machine-readable registry is `config/sources.toml`. Source URLs,
-PIDs, expected archive members, size safety limits, and execution profiles must
-come from that registry rather than being duplicated in downloader code.
+## Transport and source format
 
-## Source transport and native format
+For each product ID, the pipeline calls Statistics Canada's cube-metadata and
+`getFullTableDownloadCSV` endpoints. The latter returns JSON containing the
+current ZIP URL. Both the HTTP response and the WDS-level status must succeed.
 
-All four sources use Statistics Canada's `getFullTableDownloadCSV` method. The
-method returns a small JSON response containing the current static ZIP URL; the
-pipeline must validate `status == "SUCCESS"` and then download the returned
-HTTPS URL. It must not assume that a successful HTTP response implies a
-successful WDS response.
+Every source arrives as an English ZIP containing a data CSV and metadata CSV.
+The entire ZIP is kept in `data/raw`; neither member is discarded or converted
+there.
 
-Statistics Canada's full-table format is an English ZIP containing a comma-
-delimited data CSV and a corresponding metadata CSV. The data contains standard
-fields such as `REF_DATE`, `GEO`, `DGUID`, `UOM`, `SCALAR_FACTOR`, `VECTOR`,
-`VALUE`, and status fields. The metadata contains the table period, dimensions,
-members, notes, symbols, and corrections. Both files are part of the source
-artifact; neither may be discarded or converted in the raw zone.
+The source sizes observed on 2026-08-31 were:
 
-The API and current resolved links were verified on 2026-08-31:
+| Source | PID | ZIP size | Cube datapoints |
+| --- | --- | ---: | ---: |
+| CMHC housing activity | 34100154 | 4,262,413 bytes | 342,900 |
+| CMHC starts by market | 34100148 | 7,618,340 bytes | 799,600 |
+| Building permits | 34100292 | 364,827,497 bytes | 38,338,128 |
+| New Housing Price Index | 18100205 | 355,086 bytes | 65,640 |
 
-| Source ID | Table / PID | Source availability | Full-profile window | Observed ZIP size | Observed cube datapoints |
-| --- | --- | --- | --- | ---: | ---: |
-| `cmhc_housing_activity` | 34-10-0154-01 / 34100154 | 1972-01 onward | 2016-01–2025-12 | 4,262,413 bytes | 342,900 |
-| `cmhc_starts_by_market` | 34-10-0148-01 / 34100148 | 1988-06 onward | 2016-01–2025-12 | 7,618,340 bytes | 799,600 |
-| `statcan_building_permits` | 34-10-0292-01 / 34100292 | 2018-01 onward | 2018-01–2025-12 | 364,827,497 bytes | 38,338,128 |
-| `statcan_new_housing_price_index` | 18-10-0205-01 / 18100205 | 1981-01 onward | 2016-01–2025-12 | 355,086 bytes | 65,640 |
+These are publisher cube counts, not counts of buildings or transactions, and
+they can change with later releases.
 
-These counts describe complete published cubes before geography, period,
-aggregate-level, and variable filters. They are volatile source metadata, not
-fixed validation thresholds and not counts of building-level events.
+## Download sequence
 
-All tables report monthly frequency code `6`. Releases and corrections replace
-the static ZIP at the same URL, so URL identity alone is not version identity.
+For each selected source, the ingestor:
 
-## Execution profiles
+1. fetches cube metadata and saves the exact response;
+2. checks the product ID, monthly frequency, archive status, release time and
+   configured dimensions;
+3. resolves the full-table ZIP endpoint;
+4. checks that the returned URL is HTTPS, belongs to
+   `www150.statcan.gc.ca` and contains the expected PID filename;
+5. streams the response to a run-owned partial file while counting bytes and
+   calculating SHA-256;
+6. validates the response metadata and ZIP; and
+7. writes the manifest and atomically renames the completed snapshot directory.
 
-### Development profile
+No raw ZIP is extracted, recompressed or edited.
 
-The development profile downloads these manageable full-table archives:
+## Raw layout
 
-- CMHC housing activity;
-- CMHC starts by intended market; and
-- the New Housing Price Index.
-
-Their current compressed size is approximately 12 MB combined. After raw
-ingestion, later phases will filter to January 2024 through December 2025 for:
-
-- Toronto, Ontario (CMA code 535);
-- Vancouver, British Columbia (CMA code 933); and
-- Calgary, Alberta (CMA code 825).
-
-The full-table endpoint does not offer a server-side date/geography subset, so
-the raw archives still contain complete history. The 365 MB permits archive is
-excluded from fast development runs. Phase 5 must cover its downloader behavior
-with mocked HTTP tests; it is exercised against real data in the full profile.
-
-### Full profile
-
-The full profile downloads all four current snapshots. PySpark will retain all
-eligible CMA rows for the fixed benchmark ending December 2025. The three
-long-running sources use January 2016 as their start; building permits use
-January 2018 because Table 34-10-0292-01 contains no earlier observations.
-
-The fixed end date makes portfolio runs reproducible. A separately requested
-incremental run may use later releases, but must create new snapshots rather
-than altering the benchmark archives.
-
-## Retrieval sequence
-
-For each selected source, Phase 5 must perform these steps in order:
-
-1. POST the PID to `getCubeMetadata` and preserve the exact JSON response.
-2. Require a successful metadata response with the configured PID, monthly
-   frequency, current archive status, release time, and expected dimensions.
-3. GET the configured `getFullTableDownloadCSV/{PID}/en` endpoint.
-4. Require `status == "SUCCESS"`; validate that the returned URL is HTTPS, is
-   hosted by `www150.statcan.gc.ca`, and matches the configured PID filename.
-5. Stream the ZIP to a run-owned `.part` file while calculating SHA-256 and
-   counting bytes. The entire response must not be held in memory.
-6. Validate HTTP metadata and ZIP integrity before making the artifact visible.
-7. Write the source metadata and generated manifest beside the archive, then
-   atomically publish the completed snapshot directory.
-
-No step extracts, edits, recompresses, or converts the downloaded ZIP in
-`data/raw/`.
-
-## Deterministic raw layout
-
-Each immutable snapshot is identified by the source's normalized release time
-and the downloaded bytes, not by a mutable `latest` filename:
+Release time and file content identify a snapshot:
 
 ```text
 data/raw/statcan/<source_id>/
 └── release=<YYYYMMDDTHHMMSSZ>/
-    └── sha256=<64-lowercase-hex-digest>/
+    └── sha256=<digest>/
         ├── <PID>-eng.zip
         ├── cube-metadata.json
         └── manifest.json
 ```
 
-WDS release times are published as Eastern time with daylight-saving behavior.
-The manifest preserves the raw value and stores the normalized UTC value used
-in the directory name. Temporary files use:
+Statistics Canada publishes release times in Eastern time. The raw timestamp is
+kept in the manifest and a normalized UTC timestamp is used in the path.
+
+Partial downloads live at:
 
 ```text
 data/raw/.partial/<source_id>-<run-uuid>.zip.part
 ```
 
-The UUID prevents concurrent processes from sharing a partial file. A process
-may delete only its own partial file when it handles an error. It must not
-remove another run's partial file or any completed snapshot.
+A run removes only its own partial file after an error. It never deletes a
+completed snapshot or another process's partial download.
 
-## Manifest contract
+## Manifest
 
-`manifest.json` is UTF-8 JSON with sorted keys and a trailing newline. It must
-contain at least:
+`manifest.json` is sorted UTF-8 JSON with a trailing newline. Its main sections
+are:
 
 ```json
 {
   "artifact": {
     "byte_count": 4262413,
-    "content_type": "application/zip",
     "filename": "34100154-eng.zip",
-    "sha256": "<64 lowercase hexadecimal characters>",
+    "sha256": "<64 lowercase hex characters>",
     "zip_crc_valid": true,
     "zip_members": ["34100154.csv", "34100154_MetaData.csv"]
   },
-  "contract_version": 1,
   "http": {
     "content_length": 4262413,
     "etag": "<value or null>",
@@ -143,8 +92,8 @@ contain at least:
     "resolved_download_url": "<validated HTTPS URL>"
   },
   "retrieval": {
-    "completed_at_utc": "<ISO-8601 timestamp>",
-    "started_at_utc": "<ISO-8601 timestamp>"
+    "started_at_utc": "<timestamp>",
+    "completed_at_utc": "<timestamp>"
   },
   "source": {
     "id": "cmhc_housing_activity",
@@ -156,85 +105,61 @@ contain at least:
 }
 ```
 
-The real manifest also records the request URL, WDS response status, HTTP
-status, redirect target, source issue date, source coverage dates, frequency,
-archive status, series/datapoint counts, correction IDs/dates, downloader
-version, and selected profile. Null HTTP headers are recorded explicitly rather
-than invented.
+The full manifest also records request/redirect URLs, statuses, coverage dates,
+series and datapoint counts, corrections, downloader version and profile. A
+missing HTTP header is recorded as null. `cube-metadata.json` remains the exact
+source response; the manifest is only a useful summary.
 
-`cube-metadata.json` preserves the exact per-PID WDS response used for the run.
-The generated manifest summarizes the fields needed for discovery and audit;
-it is not a replacement for source metadata.
+## Publish checks
 
-## Integrity checks
+A snapshot is accepted only if:
 
-A snapshot is publishable only when all checks pass:
+- WDS JSON reports success and the requested PID;
+- the archive response is HTTP 200 with an allowed content type;
+- its byte count is positive and below the configured cap;
+- `Content-Length`, when supplied, matches the streamed bytes;
+- the SHA-256 digest is recorded;
+- the ZIP opens and every member passes CRC validation;
+- no ZIP member is absolute or contains a `..` segment;
+- both configured CSV members exist; and
+- metadata has the expected frequency, dimensions, active status and date
+  overlap with the profile.
 
-1. WDS responses are valid JSON, report success, and identify the requested PID.
-2. The archive response is HTTP 200 with an allowed content type and a positive
-   byte count below the source-specific `max_archive_bytes` safety cap.
-3. If `Content-Length` is present, it equals the number of streamed bytes.
-4. A SHA-256 digest is calculated from the exact downloaded bytes and recorded.
-5. The file is a readable ZIP, every member passes its CRC check, and no member
-   uses an absolute path or `..` traversal segment.
-6. The configured data and metadata CSV member names are both present. Extra
-   members are recorded rather than silently discarded.
-7. Metadata reports monthly frequency, a current table, the configured
-   dimensions, and coverage intersecting the requested profile window.
+Statistics Canada does not provide a checksum for this endpoint. The local
+SHA-256 identifies the downloaded bytes; it is not an independent signature
+from the publisher. `ETag`, `Last-Modified` and `Content-Length` are revision
+hints, not substitutes for the digest.
 
-Statistics Canada does not publish a checksum through this endpoint. SHA-256 is
-therefore a local identity/integrity guarantee, not proof against a separately
-compromised upstream file. `ETag`, `Last-Modified`, and `Content-Length` are
-recorded as revision hints but never treated as substitutes for SHA-256.
+## Timeouts and retries
 
-## Retry, timeout, and failure behavior
+- connect timeout: 10 seconds
+- per-read timeout: 120 seconds
+- overall archive deadline: 1,800 seconds
+- attempts: 4
+- exponential full-jitter backoff: 1 to 30 seconds
+- `Retry-After` cap: 300 seconds
 
-- Use a 10-second connection timeout and a 120-second per-read timeout.
-- Enforce a 1,800-second overall deadline per archive so the large permits file
-  has a bounded but realistic window.
-- Allow four total attempts with exponential full-jitter backoff starting at
-  one second and capped at 30 seconds.
-- Retry connection failures, timeouts, HTTP 408, 409, 425, 429, 500, 502, 503,
-  and 504. Statistics Canada documents 409 while tables are locked for updates.
-- Honor `Retry-After` when present, capped at 300 seconds.
-- Retry a truncated response or failed ZIP/CRC validation once within the same
-  four-attempt budget after removing only that attempt's partial file.
-- Do not retry authentication errors, other non-retryable 4xx responses, an
-  unexpected host/PID, malformed successful metadata, or contract/schema drift.
-- On exhaustion, log the source ID, PID, attempt count, failure category, and
-  actionable reason; exit non-zero and publish no manifest or final directory.
+Connection errors, timeouts and HTTP 408, 409, 425, 429, 500, 502, 503 and 504
+are retryable. A truncated response or failed ZIP/CRC check can be retried once
+within the same four-attempt budget.
 
-Logs must never contain response bodies beyond a short sanitized error message,
-environment dumps, or future credentials.
+Authentication errors, other non-retryable 4xx responses, unexpected hosts or
+PIDs, malformed success responses and metadata/schema drift fail immediately.
+After the last attempt, the command exits non-zero and leaves no completed
+snapshot.
 
-## Idempotency and revision handling
+Logs include the source, PID, attempt and short failure reason. They do not dump
+response bodies, environment variables or credentials.
 
-Before downloading, inspect completed manifests for the same PID and normalized
-release time. If a manifest's `ETag`, `Last-Modified`, and `Content-Length` still
-match the current response, recalculate the local file's SHA-256 and ZIP CRC:
+## Reruns and revisions
 
-- if they match the manifest, report `already present` and skip;
-- if they do not match, fail loudly without overwriting or deleting the file.
+Before downloading, the ingestor compares a release's saved HTTP hints and
+revalidates the local SHA-256 and ZIP CRC. Matching bytes produce an
+`already_present` result. A mismatch fails rather than overwriting the file.
 
-If revision hints changed—or are unavailable for a release not yet present—use
-a new partial download and compute its digest. If the final digest directory
-already exists and verifies, discard only the run-owned partial and report a
-successful idempotent no-op. A new digest creates a new immutable sibling
-snapshot, even when the source release timestamp is unchanged.
+If the upstream bytes change, the new digest is published as a sibling snapshot.
+If that digest already exists and verifies, the partial download is discarded
+as an idempotent no-op.
 
-Historical full-table snapshots must never be unioned: each contains overlapping
-history and may revise earlier values. Downstream processing selects exactly one
-explicit snapshot per source, filters it to source-specific benchmark dates,
-then unions compatible annual/geographic partitions after normalization.
-
-## Licensing and cost boundary
-
-Statistics Canada tables are reused under the Statistics Canada Open Licence.
-The two CMHC-origin tables also retain CMHC attribution and no-endorsement
-requirements. Retrieval timestamps are recorded because both licences state
-that the terms in force when information is accessed apply.
-
-These public endpoints require no account and incur no cloud charge. The full
-permits archive does consume material local bandwidth and disk space, so it is
-excluded from the development profile and clearly flagged before full runs.
-
+Complete table releases overlap and can revise history. Downstream code selects
+one snapshot per source; it never unions several full-history releases.

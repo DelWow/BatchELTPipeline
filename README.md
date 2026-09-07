@@ -1,80 +1,97 @@
-# Canadian Housing Supply Batch Pipeline
+# Canadian housing supply pipeline
 
-A reproducible batch data pipeline that turns official monthly Canadian housing
-tables into an analytics-ready fact at:
+This repo builds a monthly housing-supply dataset for Canadian census
+metropolitan areas (CMAs). It combines CMHC housing starts, completions and
+units under construction with intended-market detail and Statistics Canada
+price and permit indicators.
 
-> **reference month × census metropolitan area (CMA) × dwelling type**
+The output grain is one row per month, CMA and dwelling type. Along with the
+source measures, it includes rolling averages, year-over-year change and a
+simple anomaly flag based on the preceding 12 months.
 
-The project demonstrates immutable ingestion, testable PySpark transformations,
-fail-closed data quality, an idempotent Snowflake publication design, a lean
-single-node Spark container, and scheduled execution on local Kubernetes.
+## Current status
 
-The source tables are pre-aggregated statistical series—not individual permits,
-buildings, or households. The honest scale story is therefore integration of
-multiple years, geographies, releases, and analytical dimensions rather than a
-claim of processing millions of row-level events.
+The development profile has been run locally, in Docker and as a Job on a local
+`kind` cluster. It covers Calgary, Toronto and Vancouver from January 2024 to
+December 2025.
 
-## What it answers
+```text
+360 rows
+24 months
+3 CMAs
+5 dwelling types
+45 columns
+15 anomaly flags
+```
 
-The modeled fact supports questions such as:
+The three downloaded source cubes contain 1,208,140 published datapoints. They
+are aggregate statistical series, not individual homes or transactions. After
+the development filters and source-specific cleanup, 3,096 observations feed
+the 360-row analytics table.
 
-- How do starts, completions, and month-end units under construction trend by
-  CMA and dwelling type?
-- How does the intended-market mix—rental, homeowner, condominium,
-  co-operative, and other—differ across cities and time?
-- Where do starts move unusually relative to that CMA and dwelling type's
-  preceding 12 months?
-- When available, how do building-permit values and new-housing price indexes
-  provide context for supply activity?
+Snowflake loading is implemented and covered by mocked tests, but has not been
+run against a real account.
 
-Trend and anomaly fields are descriptive screening signals. They do not imply
-causality or identify bad source data by themselves.
-
-## Architecture
+## Data flow
 
 ```mermaid
 flowchart LR
-    A[Statistics Canada bulk ZIP releases<br/>including CMHC-origin series]
-    B[Idempotent ingestion<br/>metadata + ZIP + SHA-256 checks]
-    C[(Immutable raw landing zone<br/>data/raw)]
-    D[PySpark cleaning<br/>schemas, units, revisions, quality flags]
-    E[PySpark analytics<br/>CMA × dwelling × month rollups<br/>trends and anomalies]
-    F{Validation gate}
-    G[(Year-partitioned Parquet<br/>data/curated)]
-    H[(Snowflake transient staging)]
-    I[(Snowflake monthly fact<br/>and load audit)]
-    J[Kubernetes CronJob]
-
-    A --> B --> C --> D --> E --> F
-    F -->|pass| G
-    F -.->|pass + explicit opt-in| H --> I
-    F -->|fail| K[Non-zero exit<br/>no publication]
-    J -->|schedules container| D
+    A[Statistics Canada bulk ZIPs] --> B[Ingestion and integrity checks]
+    B --> C[(Immutable raw snapshots)]
+    C --> D[PySpark cleanup]
+    D --> E[Monthly CMA rollups and trends]
+    E --> F{Validation}
+    F -->|pass| G[(Partitioned Parquet)]
+    F -->|fail| H[Exit without publishing]
+    F -. optional .-> I[(Snowflake staging)]
+    I --> J[(Snowflake fact and load audit)]
+    K[Kubernetes CronJob] --> D
 ```
 
-The repository name uses “ELT,” but the implemented warehouse boundary is more
-precisely **ETL**: Spark transforms the raw source tables before loading the
-modeled fact into Snowflake. Inside Snowflake, validated staging rows are then
-transactionally published into the serving table. Calling out that distinction
-is more defensible than stretching the terminology in an interview.
+The repository name predates the final design. Since the Spark job transforms
+the data before it reaches Snowflake, this is closer to ETL than strict ELT.
 
-## Data sources
+## Sources
 
-| Role | Official table | Project use |
-| --- | --- | --- |
-| Housing activity | [Statistics Canada 34-10-0154-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3410015401), sourced from CMHC | Monthly starts, completions, and under-construction counts |
-| Intended market | [Statistics Canada 34-10-0148-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3410014801), sourced from CMHC | Starts by homeowner, rental, condominium, co-operative, and other market |
-| Building permits | [Statistics Canada 34-10-0292-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3410029201) | Leading supply context in the full profile |
-| New housing prices | [Statistics Canada 18-10-0205-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1810020501) | CMA-level price-index context |
+| Table | Used for |
+| --- | --- |
+| [34-10-0154-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3410015401), sourced from CMHC | Starts, completions and units under construction |
+| [34-10-0148-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3410014801), sourced from CMHC | Starts by intended market |
+| [34-10-0292-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3410029201) | Residential building permits (full profile only) |
+| [18-10-0205-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1810020501) | New Housing Price Index |
 
-The fixed benchmark window is 2016–2025, except the current permits table,
-which begins in 2018. The fast development slice uses Calgary, Toronto, and
-Vancouver for January 2024 through December 2025. See [DATASET.md](DATASET.md)
-for source selection, coverage, attribution, licensing, and scope boundaries.
+The pipeline uses Statistics Canada's bulk distribution for all four tables.
+This gives each source a stable product ID, machine-readable metadata and a
+consistent ZIP/CSV format. See [DATASET.md](DATASET.md) for the time windows,
+licensing and modeling boundaries.
 
-## Verified development result
+## Run locally
 
-The repeatable development run produces:
+Requirements:
+
+- Python 3.11
+- Java 17 or newer
+- [`uv`](https://docs.astral.sh/uv/)
+
+Install the locked environment:
+
+```bash
+UV_CACHE_DIR=.uv-cache UV_PYTHON_INSTALL_DIR=.python uv sync --locked
+```
+
+Run the development pipeline, including ingestion:
+
+```bash
+uv run housing-elt run --profile development
+```
+
+Once the raw snapshots are present, the same job can run offline:
+
+```bash
+uv run housing-elt run --profile development --skip-ingestion
+```
+
+A successful run ends with a summary similar to this:
 
 ```text
 validation=passed analytics_rows=360 years=2 anomalies=15 \
@@ -82,44 +99,45 @@ activity_only_rows=0 market_only_rows=0 missing_price_rows=0 \
 missing_permit_rows=360 output=data/curated/housing_monthly
 ```
 
-The 360 rows reconcile to 24 months × 3 CMAs × 5 canonical dwelling types.
-Permit coverage is intentionally absent from this profile because its roughly
-365 MB compressed source archive is reserved for an explicit full-profile run.
+The permits source is left out of the development profile because its ZIP is
+about 365 MB. Missing permit values are therefore expected in this run. The
+full profile downloads it and keeps all eligible CMAs in the 2016–2025
+benchmark window (2018–2025 for permits).
 
-The local Kubernetes smoke Job completed from the same image in 18 seconds. A
-second test Job intentionally required 361 rows and exited `1` before
-publication, demonstrating that the validation gate fails closed.
-
-## Quick start
-
-### Prerequisites
-
-- Python 3.11
-- [`uv`](https://docs.astral.sh/uv/) 0.12 or a compatible later 0.x version
-- Java 17 or newer for local PySpark
-- Docker Desktop for container and `kind` workflows
-
-No global Python packages are required. From the repository root:
+Useful stage-specific commands:
 
 ```bash
-UV_CACHE_DIR=.uv-cache UV_PYTHON_INSTALL_DIR=.python uv sync --locked
 uv run housing-elt show-config
+uv run housing-elt ingest --profile development
+uv run housing-elt clean --profile development
+uv run housing-elt aggregate --profile development
 ```
 
-Download, validate, transform, and publish the development data locally:
+More setup notes are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
-```bash
-uv run housing-elt run --profile development
-```
+## What happens during a run
 
-Once immutable raw snapshots exist, repeat the Spark portion without network
-access:
+### Ingestion
 
-```bash
-uv run housing-elt run --profile development --skip-ingestion
-```
+Each source is downloaded in its original ZIP format. The downloader checks
+the WDS response, host and product ID, byte count, ZIP members, CRC and SHA-256
+before publishing a snapshot. Completed snapshots are stored by release time
+and checksum, so a corrected upstream release does not overwrite the previous
+one. Rerunning ingestion revalidates matching local files and reports
+`already_present`.
 
-Generated Parquet files appear under year partitions:
+### Spark transformations
+
+Raw fields are read as strings under an explicit schema, then normalized into
+separate clean facts. This preserves status codes and distinguishes a genuine
+zero from an unavailable or suppressed value. Newer releases win when the same
+natural key appears more than once.
+
+The analytics step pivots the two CMHC tables, joins them on month/CMA/dwelling
+type and adds CMA-level price and permit context. Published totals stay separate
+from component dwelling types to avoid double counting.
+
+The Parquet output is partitioned by year:
 
 ```text
 data/curated/housing_monthly/
@@ -127,34 +145,31 @@ data/curated/housing_monthly/
 └── reference_year=2025/
 ```
 
-The source registry is [config/sources.toml](config/sources.toml), and versioned
-quality thresholds are in [config/validation.toml](config/validation.toml).
-Detailed local setup and individual stage commands are in
-[DEVELOPMENT.md](DEVELOPMENT.md).
+Year partitions are a better fit than month partitions here: the table is
+small, and monthly partitions would create many tiny files.
 
-### Run the checks
+### Validation
 
-```bash
-uv lock --check
-uv run ruff check .
-uv run ruff format --check .
-uv run pytest -q
-```
+The job checks schema, row-count bounds, key nulls, duplicate keys, dwelling
+coverage and source reconciliations. In the verified development run:
 
-Unit tests mock external HTTP and Snowflake boundaries. Spark transformation
-tests use a local JVM; no test suite command contacts a paid service.
+- all 360 intended-market totals matched the activity starts values;
+- all 216 eligible total-versus-component comparisons matched;
+- there were no duplicate keys, key nulls or incomplete CMA/month groups; and
+- price coverage was complete for the selected cities and months.
 
-## Container run
+Validation runs before either Parquet or Snowflake publication. A failed check
+returns a non-zero process exit.
 
-Build the pinned, non-root image:
+The detailed field rules live in [TRANSFORMATION_CONTRACT.md](TRANSFORMATION_CONTRACT.md),
+[ANALYTICS_CONTRACT.md](ANALYTICS_CONTRACT.md) and
+[VALIDATION_CONTRACT.md](VALIDATION_CONTRACT.md).
+
+## Docker
 
 ```bash
 docker build --tag canadian-housing-elt:local .
-```
 
-Run it against existing raw snapshots:
-
-```bash
 docker run --rm \
   --mount type=bind,source="$PWD/data/raw",target=/app/data/raw,readonly \
   --mount type=bind,source="$PWD/data/interim",target=/app/data/interim \
@@ -163,16 +178,15 @@ docker run --rm \
   run --profile development --skip-ingestion
 ```
 
-The container runs one local Spark driver with two worker threads rather than
-pretending to be a multi-node Spark cluster. See [CONTAINER.md](CONTAINER.md)
-for the base-image decision, image inspection, native-Linux ownership notes,
-and the intentional validation-failure command.
+The image uses Python 3.11 slim, a Java runtime and `tini`. It runs as UID/GID
+10001 and contains no data or credentials. This is a single-node Spark job; it
+does not try to package a Spark cluster. See [CONTAINER.md](CONTAINER.md) for
+the failure smoke test and Linux bind-mount notes.
 
-## Kubernetes run
+## Kubernetes
 
-The local orchestration target is `kind`: its nodes are Docker containers, so
-the image can be loaded without a registry or cloud cluster. After following
-the checksummed project-local tool setup in [KUBERNETES.md](KUBERNETES.md):
+The local target is `kind`. After installing the checksummed project-local
+tools described in [KUBERNETES.md](KUBERNETES.md):
 
 ```bash
 .tools/kind create cluster --config k8s/kind-cluster.yaml
@@ -185,137 +199,77 @@ the checksummed project-local tool setup in [KUBERNETES.md](KUBERNETES.md):
 .tools/kubectl -n housing-elt logs job/housing-elt-smoke
 ```
 
-The CronJob runs at 11:00 UTC on the fifth day of each month. It forbids
-overlap, bounds retries/runtime/history, drops Linux capabilities, uses a
-read-only root filesystem, and mounts raw input read-only. Its intermediate
-and curated paths are deliberately ephemeral `emptyDir` volumes for this local
-demonstration.
+The CronJob runs at 11:00 UTC on the fifth of each month. It prevents overlap,
+sets CPU/memory limits, caps retries and runtime, and runs with a read-only root
+filesystem and no service-account token. Local outputs use `emptyDir`, so they
+are disposable.
 
-## Snowflake publication
+## Snowflake
 
-Snowflake is optional and disabled by default. No live account, warehouse, or
-other billable resource was used while building or verifying this repository.
+The loader uses `snowflake-connector-python` and streams the validated Spark
+rows in bounded batches. It writes to batch-addressed staging, reconciles the
+staged count and keys, then replaces the batch's month range in one transaction.
+An audit table records started, successful and failed loads.
 
-The pipeline uses `snowflake-connector-python` because Spark reduces the source
-cubes to a compact serving fact. Bounded `executemany()` batches avoid adding a
-Spark connector, JDBC driver, and Scala compatibility surface solely for tens
-of thousands of modeled rows. For a materially larger output, staged Parquet
-with `PUT`/`COPY INTO` or a compatible Spark–Snowflake connector should be
-benchmarked instead.
+The modeled table is only tens of thousands of rows at the planned full scope,
+so the Python connector keeps the dependency surface smaller than the
+Spark–Snowflake connector. There is no clustering key; that would add cost
+without a measured need at this size.
 
-Publication is designed as:
-
-1. insert a `STARTED` audit record;
-2. stream validated rows into batch-addressed transient staging;
-3. reconcile staged count and natural-key uniqueness;
-4. transactionally replace the staged reference-month window in the final
-   table; and
-5. commit a `SUCCEEDED` audit record, or roll back and record `FAILED`.
-
-The DDL is [sql/001_create_housing_analytics.sql](sql/001_create_housing_analytics.sql)
-and the exact publish transaction is
+The DDL is in [sql/001_create_housing_analytics.sql](sql/001_create_housing_analytics.sql),
+and the publication statements are in
 [sql/002_publish_housing_monthly.sql](sql/002_publish_housing_monthly.sql).
-Read [SNOWFLAKE_DESIGN.md](SNOWFLAKE_DESIGN.md) and
-[SNOWFLAKE_LOADER.md](SNOWFLAKE_LOADER.md) before explicitly enabling
-`--load-snowflake`. Never place credentials in the repository or the example
-Kubernetes Secret.
+Live setup and required environment variables are covered in
+[SNOWFLAKE_LOADER.md](SNOWFLAKE_LOADER.md). Using a real warehouse is optional
+and may incur Snowflake charges.
 
-## Key engineering decisions
+## Tests
 
-| Decision | Rationale |
-| --- | --- |
-| Keep native ZIP releases immutable | Preserves replayable source evidence and avoids lossy early conversion. |
-| Address snapshots by release and SHA-256 | Makes reruns idempotent while retaining publisher revisions as separate artifacts. |
-| Use explicit source-specific Spark schemas | Detects source drift and preserves coded missing/suppressed values. |
-| Separate cleaning, aggregation, validation, and loading | Keeps business rules unit-testable and prevents a monolithic job. |
-| Full-join the two core CMHC rollups | Retains one-sided coverage problems instead of hiding them with an inner join. |
-| Partition Parquet by year | Preserves useful date pruning without creating tiny monthly files at this fact grain. |
-| Exclude the current month from anomaly baselines | Prevents look-ahead leakage in the prior-12-month z-score. |
-| Validate before both local and Snowflake publication | Bad data returns a non-zero exit and cannot reach either output path. |
-| Omit a Snowflake clustering key | The fact is far below the scale where paid automatic clustering is justified; measure pruning first. |
-| Use a Kubernetes CronJob, not a Spark cluster | Demonstrates scheduled batch operations while keeping compute proportional to the workload. |
-
-Field-level semantics are documented in
-[TRANSFORMATION_CONTRACT.md](TRANSFORMATION_CONTRACT.md),
-[ANALYTICS_CONTRACT.md](ANALYTICS_CONTRACT.md), and
-[VALIDATION_CONTRACT.md](VALIDATION_CONTRACT.md).
-
-## Data-quality controls
-
-Before anything is published, the pipeline checks:
-
-- exact schema and required-column presence;
-- profile-specific row-count bounds;
-- natural-key uniqueness at month × CMA × dwelling type;
-- null thresholds for core and optional measures;
-- the expected five dwelling types per CMA/month;
-- reconciliation between published housing totals and their components; and
-- coverage mismatches between housing activity and intended-market facts.
-
-Failure messages contain the check name, observed value, and expected bound.
-The writer and optional Snowflake callback are unreachable when validation
-raises.
-
-## Repository map
-
-```text
-config/                 Versioned source and validation contracts
-data/raw/               Immutable downloaded ZIP snapshots (Git-ignored)
-data/interim/           Reproducible extracted/clean working data (Git-ignored)
-data/curated/           Year-partitioned Parquet output (Git-ignored)
-k8s/                    kind, Kustomize, CronJob, and failure-smoke manifests
-sql/                    Reviewed Snowflake DDL and transactional DML
-src/housing_elt/        Installable ingestion, Spark, validation, and loader code
-tests/unit/             Offline unit and contract tests
+```bash
+uv lock --check
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
 ```
 
-See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for path ownership and runtime
-configuration.
+The current suite has 58 tests. HTTP and Snowflake are mocked; Spark tests use a
+local JVM. There are also static checks for the Docker and Kubernetes security
+contracts.
 
 ## Troubleshooting
 
-| Symptom | Check |
-| --- | --- |
-| `JAVA_GATEWAY_EXITED` | Confirm Java 17+ is available and localhost socket binding is permitted. |
-| No raw snapshot found | Run `uv run housing-elt ingest --profile development`; do not manufacture CSV fixtures in `data/raw`. |
-| Row-count or reconciliation failure after a new release | Preserve the raw revision, inspect the named metric, and review the versioned contract before changing a threshold. |
-| Container cannot write on native Linux | Give UID/GID `10001` write access to the mounted interim and curated directories. |
-| kind reports `ErrImageNeverPull` | Run `.tools/kind load docker-image canadian-housing-elt:local --name housing-elt`. |
-| Kubernetes Job output disappears | Local curated output uses `emptyDir`; inspect logs or replace it with approved persistent/object storage for production. |
-| Snowflake configuration error | Supply every documented `HOUSING_ELT_SNOWFLAKE_*` variable and confirm the DDL has been reviewed and applied to the intended environment. |
+- `JAVA_GATEWAY_EXITED`: check that Java 17+ is available and localhost socket
+  binding is allowed.
+- No raw snapshot found: run `uv run housing-elt ingest --profile development`
+  first.
+- `ErrImageNeverPull` in kind: load the local image with
+  `.tools/kind load docker-image canadian-housing-elt:local --name housing-elt`.
+- Bind-mount permission errors on Linux: make the writable data directories
+  accessible to UID/GID 10001.
+- A validation count changes after a new source release: keep the new raw
+  snapshot, inspect the failed metric and review the contract before changing
+  its threshold.
 
-## Known limitations and production evolution
+## Limits
 
-- The verified development profile excludes the large building-permits source;
-  the full benchmark needs additional local bandwidth, disk, and runtime.
-- Statistics Canada bulk tables are complete, revisable snapshots. The pipeline
-  selects one explicit snapshot per source instead of unioning overlapping
-  full-history releases and double-counting observations.
-- Spark runs locally inside one process/container. At substantially larger
-  scale, use object storage and a managed or operator-backed Spark runtime,
-  then tune partitions from measured shuffle and file-size metrics.
-- The local CronJob assumes raw data is already mounted and uses ephemeral
-  outputs. A production schedule should ingest into versioned object storage,
-  promote outputs atomically, and retain run metadata externally.
-- The z-score rule is intentionally transparent but basic. Production anomaly
-  detection would evaluate seasonality, structural breaks, and backtested alert
-  quality.
-- Snowflake behavior is covered by mocked boundary tests, but live integration
-  remains an explicit cost/credential gate. A bounded test should reconcile
-  staged and final counts before claiming production verification.
-- Production hardening would add CI, image vulnerability/signature checks,
-  centralized logs and metrics, alerting, an external secrets manager, and
-  retention/lifecycle policies.
+- Only the development profile has been run end to end with real source files.
+- The Snowflake boundary is mock-tested but not live-tested.
+- Spark runs in local mode, including inside Docker and Kubernetes.
+- The local CronJob expects raw data to be mounted and writes ephemeral output.
+- The z-score is a screening rule, not a forecast or a claim that a source value
+  is wrong.
 
-## Defensible portfolio claims
+At larger scale I would move raw and curated data to versioned object storage,
+use bulk Snowflake loading, add centralized run metrics and alerts, and run
+Spark on managed infrastructure or the Spark Operator.
 
-This project demonstrates local PySpark DataFrame and window-function work,
-multi-source dimensional modeling, immutable/idempotent ingestion, explicit
-lineage, fail-closed quality gates, transactional warehouse-loading logic,
-container security, and Kubernetes batch scheduling.
+## Repository layout
 
-It does **not** claim streaming, a distributed production Spark cluster,
-millions of source events, causal inference, or a live production Snowflake
-deployment. Those boundaries are intentional and documented so the project can
-be explained accurately in a technical interview.
-
+```text
+config/             source registry and validation thresholds
+data/               local raw, intermediate and curated data (Git-ignored)
+k8s/                kind and CronJob manifests
+sql/                Snowflake DDL and publication SQL
+src/housing_elt/    pipeline package
+tests/              unit and deployment-contract tests
+```

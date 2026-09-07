@@ -1,6 +1,6 @@
--- Phase 9 reviewed DDL. This file has not been executed against Snowflake.
--- The connection must select the intended database and warehouse. Deliberately
--- omitted: CREATE DATABASE/WAREHOUSE, credentials, roles, users, and grants.
+-- Reviewed DDL; not yet executed against a live Snowflake account.
+-- The connection selects the database and warehouse. This script does not
+-- create credentials, roles, users, grants, a database or a warehouse.
 
 CREATE SCHEMA IF NOT EXISTS HOUSING_ANALYTICS
     COMMENT = 'Validated monthly Canadian CMA housing analytics';

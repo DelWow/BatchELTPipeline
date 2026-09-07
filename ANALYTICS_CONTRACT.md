@@ -1,21 +1,17 @@
-# Analytics Fact Contract
+# Analytics table
 
-Phase 7 publishes one analytics-ready Parquet dataset at
-`data/curated/housing_monthly/`. Its grain is:
+`data/curated/housing_monthly/` contains one row per:
 
-> one row per reference month × census metropolitan area (CMA) × canonical
-> dwelling type
+> reference month × CMA × canonical dwelling type
 
-This table supports comparison across time and CMAs without claiming that the
-source observations are individual housing records. It is an analysis cube
-built from pre-aggregated official monthly series.
+It is built from aggregate monthly series, not building-level records.
 
-## Canonical dwelling types
+## Dwelling types
 
-The two CMHC tables use slightly different labels for equivalent categories.
-They are mapped explicitly:
+The two CMHC tables use slightly different names for the same categories. They
+map to:
 
-| Canonical value | Housing activity label | Intended-market label |
+| Canonical value | Housing activity | Intended market |
 | --- | --- | --- |
 | `total` | Total units | Total units |
 | `single_detached` | Single-detached units | Single units |
@@ -23,78 +19,64 @@ They are mapped explicitly:
 | `row` | Row units | Row units |
 | `apartment_and_other` | Apartment and other unit types | Apartment and other types of units |
 
-An unexpected source label is retained with an `unmapped_` prefix instead of
-being dropped or silently assigned to a known category. Published `total` rows
-remain separate from components. Totals and components must never be summed
-together.
+An unknown label is kept with an `unmapped_` prefix so source drift is visible.
+Published totals remain separate from components and must not be added to them.
 
-## Housing measures and rollups
+## Core housing fields
 
-The activity source is pivoted into `housing_starts`, `housing_completions`, and
+The activity table is pivoted into `housing_starts`, `housing_completions` and
 `housing_under_construction`. Starts and completions are monthly flows; under
 construction is a month-end stock. `completion_to_start_ratio` is null when
-starts are zero, avoiding undefined division.
+starts are zero.
 
-The intended-market source is pivoted into homeowner, rental, condominium,
-co-operative, and other-market starts. `market_starts_total` is their sum when
-at least one market member is present. `has_complete_activity` requires all
-three activity measures; `has_complete_market_breakdown` requires all five
-market members.
+Intended-market starts are pivoted into homeowner, rental, condominium,
+co-operative and other-market fields. `market_starts_total` is the sum of the
+available market members. Completeness flags record whether all expected
+activity measures and market members were present.
 
-Activity and intended-market rollups are full-joined on month, CMA code, and
-canonical dwelling type. This deliberately retains one-sided keys and marks
-them using `has_activity_data` and `has_market_data`; an inner join would hide a
-coverage problem.
+The two rollups are full-joined on month, CMA and dwelling type. One-sided keys
+stay in the table with `has_activity_data` and `has_market_data` flags instead
+of disappearing in an inner join.
 
-## Context indicators
+## Context fields
 
-New Housing Price Index (NHPI) rows are pivoted to total, house-only, and
-land-only indexes at month/CMA grain. They are left-joined to the housing fact
-and repeated across dwelling types. Coverage is explicit through
-`has_price_index_data` and `has_complete_price_index`.
+The New Housing Price Index is pivoted into total, house-only and land-only
+indexes at month/CMA grain, then repeated across the five dwelling rows. Price
+coverage and component completeness have separate flags.
 
-Building permits use one non-overlapping context series:
+Building permits use one series to avoid overlapping totals:
 
 - building type: `Total residential`
 - work type: `Types of work, total`
 - variable: `Value of permits`
 - adjustment: `Seasonally adjusted, current`
 
-The cleaning layer has already applied Statistics Canada's scalar, so
-`residential_permit_value_dollars` is expressed in dollars. Permit context is
-also left-joined on month/CMA with `has_permit_data`. The development profile
-does not ingest the large permit archive; it therefore writes typed null permit
-values and `has_permit_data = false` rather than fabricating zeros.
+The value is in dollars after cleaning applies Statistics Canada's scalar. The
+development profile does not download permits, so it produces a typed null and
+`has_permit_data = false`, not a zero.
 
-## Trend and anomaly measures
+## Time features
 
-All windows partition by CMA and canonical dwelling type and order by month.
-They require contiguous months so missing periods are not treated as adjacent:
+Windows are partitioned by CMA and dwelling type and ordered by month. A gap in
+the monthly sequence invalidates calculations that depend on adjacency.
 
-- `starts_3_month_average`: current and prior two months.
-- `starts_year_over_year_pct`: current starts versus the same month one year
-  earlier; null when the prior value is zero or unavailable.
-- `under_construction_month_change`: current stock minus the immediately prior
-  month's stock.
-- `starts_prior_12_month_average` and `starts_prior_12_month_stddev`: the 12
-  months before the current month, excluding the current observation.
-- `starts_anomaly_zscore`: current starts relative to that prior-only baseline.
-- `starts_anomaly_flag`: absolute z-score at least 2; null when no valid
-  baseline exists.
+- `starts_3_month_average`: current month and previous two months
+- `starts_year_over_year_pct`: current starts versus 12 months earlier
+- `under_construction_month_change`: current stock minus previous month
+- `starts_prior_12_month_average`: mean of the previous 12 months
+- `starts_prior_12_month_stddev`: sample standard deviation of those months
+- `starts_anomaly_zscore`: current starts relative to that prior baseline
+- `starts_anomaly_flag`: absolute z-score of at least 2
 
-Excluding the current and future observations from the anomaly baseline avoids
-look-ahead leakage. The z-score is a transparent screening signal, not proof of
-an error or a causal event.
+The anomaly baseline excludes the current month and all future observations.
+The flag is a screening aid, not an error classification.
 
-## Partition and replacement policy
+## Output layout
 
-Parquet output is partitioned by `reference_year`, not month. At this fact's
-compact grain, monthly partitions would produce many tiny files. Year
-partitions still support date pruning while keeping a practical file layout.
-Rows are sorted within year writer partitions by month, CMA, and dwelling type.
+Parquet is partitioned by `reference_year`. Monthly partitions would create too
+many small files for this table, while yearly partitions still support common
+date filters. Rows within a year are sorted by month, CMA and dwelling type.
 
-The dataset is reproducible from immutable raw snapshots and reviewed code, so
-the Phase 7 writer replaces the generated dataset as one unit on rerun. Raw
-archives are never modified. A production object-store implementation would
-write to a versioned location and atomically promote a manifest instead of
-depending on filesystem overwrite semantics.
+The local writer replaces the generated dataset as one unit after validation.
+Raw archives are never changed. On object storage, the equivalent design would
+write a versioned dataset and promote a manifest rather than overwrite a path.

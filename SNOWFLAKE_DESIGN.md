@@ -1,154 +1,111 @@
-# Snowflake Load and Schema Design
+# Snowflake design
 
-Phase 9 defined this design and Phase 10 implemented its loader. The SQL in
-`sql/` has not been executed, and no Snowflake account, warehouse, database,
-schema, or other paid resource has been contacted or created.
+The loader and SQL are complete, but they have not been run against a live
+Snowflake account. The DDL does not create a database, warehouse, user, role or
+grants; those remain environment-specific and may incur charges.
 
-## Connector decision
+## Connector choice
 
-The loader uses `snowflake-connector-python` with server-side `qmark`
-binding and bounded `executemany()` batches.
+The project uses `snowflake-connector-python` with `qmark` binding and bounded
+`executemany()` batches.
 
-### Why the Python connector fits this pipeline
+Spark does the expensive work before this boundary. The resulting table is 360
+rows in development and should remain in the tens of thousands for the full
+benchmark. The loader can therefore stream rows with
+`DataFrame.toLocalIterator()` without collecting the whole DataFrame or adding
+a Spark plugin, JDBC driver and Scala-version dependency to the image.
 
-- PySpark performs the expensive work: reading the source cubes, resolving
-  revisions, joining, and calculating windows. The resulting serving fact is
-  compact—360 rows in development and expected to be only tens of thousands at
-  the full ten-year/CMA scope.
-- The loader streams rows from Spark with `DataFrame.toLocalIterator()` and
-  forms bounded batches. It does not call `collect()` on an unbounded frame.
-- Server-side parameter binding keeps values separate from SQL text. Snowflake
-  documents that `executemany()` can optimize sufficiently large server-bound
-  batches through a temporary stage when the session has a current database
-  and schema.
-- The Python connector adds one Python dependency and no Spark package, JDBC
-  driver, or Scala binary to the container image.
-- Explicit staging and publish SQL make transaction boundaries, reconciliation,
-  and idempotency visible instead of hiding them behind `DataFrame.write`.
+The Spark–Snowflake connector would make more sense for a much larger transfer
+or when Snowflake is also a Spark source. A staged Parquet `PUT`/`COPY INTO`
+load is another option if connector batches become a bottleneck.
 
-### Trade-off against the Spark–Snowflake connector
-
-The Spark connector is optimized for high-volume, bidirectional transfer and
-can push eligible Spark operations into Snowflake. It is the stronger choice
-when the DataFrame being transferred is genuinely large or when Snowflake is a
-Spark data source as well as a target.
-
-It also introduces a Spark plugin, Snowflake JDBC driver, Scala compatibility,
-and Spark-package resolution. Snowflake's current documentation lists Spark
-Connector 3.x support through Spark 4.1, while this project uses PySpark 4.2.
-Downgrading Spark or relying on an undocumented combination solely to use the
-connector would add risk without a scale benefit for this modeled fact.
-
-Revisit this decision if the output reaches millions of rows per batch, direct
-Spark-to-Snowflake transfer becomes a measured bottleneck, or Snowflake
-publishes a connector version verified with the project's Spark/Scala versions.
-A staged Parquet `PUT`/`COPY INTO` path is another future bulk-load option.
-
-Official references:
+References:
 
 - [Snowflake Connector for Spark](https://docs.snowflake.com/en/user-guide/spark-connector)
-- [Snowflake Python connector binding and batch inserts](https://docs.snowflake.com/en/developer-guide/python-connector/python-connector-example)
+- [Python connector batch inserts](https://docs.snowflake.com/en/developer-guide/python-connector/python-connector-example)
 - [Python connector API](https://docs.snowflake.com/en/developer-guide/python-connector/python-connector-api)
 
-## Object model
+## Tables
 
-The connection supplies the environment-specific database and warehouse. The
-DDL creates only the `HOUSING_ANALYTICS` schema and its tables; it deliberately
-does not create or resize a warehouse or create a database.
+The DDL in `sql/001_create_housing_analytics.sql` creates the
+`HOUSING_ANALYTICS` schema and three tables.
 
 ### `STG_HOUSING_MONTHLY`
 
-This is a transient, batch-addressed copy of the validated Spark fact. Transient
-storage persists across sessions for failure investigation but has no Fail-safe,
-which is appropriate because staging is reproducible from immutable raw data.
-Every row carries `LOAD_BATCH_ID`, `VALIDATION_PROFILE`, and `LOADED_AT_UTC`.
+A transient, batch-addressed copy of the validated Spark output. Staging rows
+include the load UUID, validation profile and load timestamp. Transient storage
+is sufficient because staging can be rebuilt from the immutable source files.
 
 ### `FCT_HOUSING_MONTHLY`
 
-This permanent analytics table has the same business grain as the Parquet fact:
+The serving grain matches Parquet:
 
-> one row per `REFERENCE_MONTH × CMA_CODE × DWELLING_TYPE`
+> one `REFERENCE_MONTH × CMA_CODE × DWELLING_TYPE` row
 
-It includes source-release/SHA lineage, coverage flags, and the batch/profile
-that last published the row. Key fields and deterministic coverage flags are
-`NOT NULL`; context and trend values remain nullable where their source or
-history is unavailable.
+The table carries source release/checksum lineage, coverage flags and the batch
+that last published each row. Optional context and trend fields are nullable.
 
-The table intentionally has no declared primary key. Snowflake does not enforce
-primary/unique constraints on standard tables, so an unenforced declaration
-could imply protection that does not exist. The Phase 8 uniqueness check and
-transactional scope replacement provide the actual guarantee. `NOT NULL`
-constraints are retained because Snowflake enforces them.
+There is no declared primary key. Snowflake does not enforce primary or unique
+constraints on standard tables, so the pipeline's validation and staging
+reconciliation provide the real uniqueness check. `NOT NULL` constraints are
+used because Snowflake does enforce them.
 
 ### `ELT_LOAD_AUDIT`
 
-One permanent row per attempted batch records status, profile/window, validation
-metrics, staged/published counts, timestamps, and any bounded error message.
-The loader uses it for observable retries and troubleshooting, not as a source
-of analytics data.
+One row per attempted batch records status, profile, date window, validation
+metrics, row counts, timestamps and a bounded error message.
 
-Official references:
+References:
 
-- [Transient table storage behavior](https://docs.snowflake.com/en/user-guide/tables-storage-considerations)
-- [Snowflake constraint enforcement](https://docs.snowflake.com/en/sql-reference/constraints-overview)
+- [Transient tables](https://docs.snowflake.com/en/user-guide/tables-storage-considerations)
+- [Constraint enforcement](https://docs.snowflake.com/en/sql-reference/constraints-overview)
 
 ## Type mapping
 
-| Spark/semantic value | Snowflake type | Reason |
+| Spark value | Snowflake type | Notes |
 | --- | --- | --- |
-| Date/month | `DATE` | No time-of-day meaning. |
-| Spark `long` counts | `NUMBER(38,0)` | Exact integer; Snowflake integer aliases map to this representation. |
-| PySpark fixed decimals | matching `NUMBER(p,4)` | Preserves exact NHPI and permit values. |
-| Ratios, averages, z-scores | `FLOAT` | Matches Spark double and their approximate analytical meaning. |
-| Source release timestamps | `TIMESTAMP_NTZ(6)` | Spark values were normalized in a UTC session; the convention is UTC without conversion. |
-| Loader/audit timestamps | `TIMESTAMP_TZ(6)` | Preserves the explicit instant produced by Snowflake. |
-| SHA-256 | `VARCHAR(64)` | Fixed hexadecimal lineage identifier. |
+| reference month | `DATE` | No time component |
+| counts | `NUMBER(38,0)` | Exact integers |
+| indexes and permit values | matching `NUMBER(p,4)` | Keeps decimal precision |
+| ratios, averages and z-scores | `FLOAT` | Approximate analytical values |
+| source release timestamps | `TIMESTAMP_NTZ(6)` | Stored using the pipeline's UTC convention |
+| load/audit timestamps | `TIMESTAMP_TZ(6)` | Preserves the instant |
+| SHA-256 | `VARCHAR(64)` | Lowercase hexadecimal digest |
 
-Snowflake supports exact `NUMBER` values up to 38 digits and treats `FLOAT` as
-64-bit double precision, matching the distinction already present in Spark.
-See [Snowflake numeric data types](https://docs.snowflake.com/en/sql-reference/data-types-numeric).
+See [Snowflake numeric types](https://docs.snowflake.com/en/sql-reference/data-types-numeric)
+for the `NUMBER` and `FLOAT` behavior.
 
-## Idempotent loading and publication
+## Publication transaction
 
-The implemented loader follows this sequence only after validation succeeds:
+The loader runs only after validation:
 
-1. Generate a UUID `LOAD_BATCH_ID` and insert an audit row with `STARTED`.
-2. Remove any staging rows for that same batch ID, then stream the validated
-   DataFrame through bounded `executemany()` inserts using `qmark` parameters.
-3. Compare staged count, distinct natural-key count, and validated row count.
-   Any mismatch marks the audit row `FAILED` and stops before final publication.
-4. Start an explicit DML transaction.
-5. Delete final rows in the exact reference-month window represented by the
-   staged batch.
-6. Insert the complete staged batch into the final table and update the audit
-   row to `SUCCEEDED` with the published count.
-7. Commit. On any statement failure, explicitly roll back and record `FAILED`
-   outside the rolled-back transaction.
+1. create a UUID and insert a `STARTED` audit row;
+2. clear any staging rows for that UUID;
+3. stream rows into staging in batches of 1,000;
+4. compare staged count, distinct key count and validated count;
+5. start a transaction;
+6. delete final rows in the staging batch's month range;
+7. insert the staged snapshot and mark the audit row `SUCCEEDED`; and
+8. commit, or roll back and record `FAILED`.
 
-This is a bounded snapshot replacement rather than a row-only `MERGE`. It is
-idempotent and removes stale keys that disappeared from a corrected source
-release. A retry creates the same final business rows even if it uses a new
-batch ID. DDL is never executed inside the publication transaction because
-Snowflake DDL implicitly commits active transactions.
+Replacing the complete month range removes stale keys when a corrected source
+release drops an observation. Retrying the same business snapshot converges on
+the same final rows even though the load UUID changes.
 
-One Snowflake schema represents one deployment/profile scope: a development
-schema receives the development window and a production schema receives the
-full window. Alternating development and full profiles in the same target
-schema would make a window replacement semantically ambiguous and is not
-supported. Kubernetes uses `concurrencyPolicy: Forbid`, and the loader also
-refuses a second active audit batch for the same target/profile.
+One target schema should receive one profile. Mixing development and full
+windows in the same schema would make date-range replacement ambiguous. The
+loader rejects a second active batch for the same profile, while the Kubernetes
+CronJob also prevents overlapping Jobs.
 
-Snowflake recommends explicit transactions while leaving autocommit enabled;
-statements within `BEGIN TRANSACTION`/`COMMIT` remain atomic. See
-[Snowflake transaction semantics](https://docs.snowflake.com/en/sql-reference/transactions).
+DDL stays outside the transaction because Snowflake DDL implicitly commits.
+The transaction behavior is documented in
+[Snowflake transactions](https://docs.snowflake.com/en/sql-reference/transactions).
 
-## Clustering decision
+## Clustering
 
-No clustering key is defined. The full fact is expected to remain far below the
-large, multi-terabyte tables for which Snowflake recommends considering
-clustering, and automatic clustering consumes compute credits. Natural
-micro-partition pruning should be measured first.
+No clustering key is configured. This table is far below the scale where
+automatic clustering is likely to pay for itself. If query history eventually
+shows poor pruning, `CLUSTER BY (REFERENCE_MONTH, CMA_CODE)` should be tested
+against representative filters before enabling it.
 
-If query profiles later show material scanning at much larger scale, test
-`CLUSTER BY (REFERENCE_MONTH, CMA_CODE)` against representative date/CMA
-filters before enabling it. See [Snowflake clustering-key guidance](https://docs.snowflake.com/en/user-guide/tables-clustering-keys).
+See [Snowflake clustering keys](https://docs.snowflake.com/en/user-guide/tables-clustering-keys).

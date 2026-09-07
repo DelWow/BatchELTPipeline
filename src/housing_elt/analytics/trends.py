@@ -8,8 +8,8 @@ def add_trend_features(fact: DataFrame) -> DataFrame:
     """Add contiguous-period trends at CMA/dwelling-type grain.
 
     The anomaly baseline is the preceding 12 complete months and excludes the
-    current observation. A z-score threshold of 2 is intentionally simple and
-    interview-defensible; it is a screening flag, not a causal conclusion.
+    current observation. The z-score threshold of 2 is a screening rule, not a
+    causal conclusion.
     """
     partition = Window.partitionBy("cma_code", "dwelling_type").orderBy(
         "reference_month"

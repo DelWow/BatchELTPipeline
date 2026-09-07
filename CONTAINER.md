@@ -1,49 +1,39 @@
-# Local Container Runbook
+# Container notes
 
-Phase 11 packages the existing local-mode Spark application as one container.
-It does not create a Spark cluster: the driver and two local worker threads run
-in one process tree, which is proportional to this portfolio pipeline's serving
-fact and keeps the Kubernetes CronJob understandable.
+The image runs the same local-mode Spark process used during development. The
+driver and two worker threads share one container; this is not a packaged Spark
+cluster.
 
-## Image choices
+## Image contents
 
-- `python:3.11.15-slim-bookworm` matches `.python-version` and is pinned to its
-  immutable multi-platform digest. The slim Debian base retains broad glibc
-  wheel compatibility without the tools included in a full Python image.
-- `default-jre-headless` provides Java 17 on Debian Bookworm. PySpark 4.2 needs
-  Java 17 or newer; no JDK/compiler or standalone Spark distribution is needed
-  because the locked `pyspark` package supplies Spark.
-- The builder installs pinned `uv` 0.12.5 and performs `uv sync --locked
-  --no-dev --no-editable`. Only the resulting virtual environment enters the
-  final image, excluding uv, build caches, Ruff, and pytest.
-- `tini` is the PID 1 process so termination signals reach both Python and the
-  Java child cleanly. The application runs as fixed non-root UID/GID 10001.
-- `.dockerignore` is an allowlist. Raw/interim/curated data, `.env` files,
-  credentials, Git history, local environments, tests, and documentation never
-  enter the build context.
+The runtime starts from `python:3.11.15-slim-bookworm`, pinned by digest. Debian's
+headless Java runtime supplies Java 17+, and `tini` forwards termination signals
+to Python and the Spark JVM.
 
-OS packages are intentionally not version-pinned: Debian's repository supplies
-compatible security updates for the digest-pinned Bookworm base. Python
-application dependencies are exact through `uv.lock`.
+Python dependencies are installed from `uv.lock` in a builder stage. The final
+stage does not contain `uv`, build caches, Ruff or pytest. It runs as the fixed
+non-root user `10001:10001`.
+
+The `.dockerignore` file is an allowlist. Local data, credentials, Git history,
+tests and documentation never enter the build context. The image contains only
+the application, its runtime dependencies and versioned configuration.
+
+Debian packages are not fixed to package-level versions. The base image digest
+pins the starting filesystem, while a rebuild can still receive repository
+security updates.
 
 ## Build
-
-From the repository root:
 
 ```bash
 docker build --tag canadian-housing-elt:local .
 ```
 
-The tag is local only; no registry login or push is required.
+The image is local; no registry is needed for the Docker or `kind` examples.
 
-## Run the development pipeline offline
+## Run
 
-The image intentionally contains no datasets. Bind mounts preserve the raw
-landing zone as read-only while allowing reproducible extraction and curated
-output. Keep the image's fixed user: Spark derives its Ivy home from that
-user's `/etc/passwd` entry. Docker Desktop permits this user to write the shared
-directories; on native Linux, ensure UID/GID 10001 can write `data/interim` and
-`data/curated` before running:
+The image ships without data. Mount raw input read-only and provide writable
+intermediate and curated directories:
 
 ```bash
 docker run --rm \
@@ -54,14 +44,16 @@ docker run --rm \
   run --profile development --skip-ingestion
 ```
 
-Do not add `--load-snowflake` for this smoke test. Snowflake remains a separate
-approval gate and the image contains no credentials.
+Docker Desktop handles ownership for these shared directories. On native Linux,
+UID/GID 10001 needs write access to `data/interim` and `data/curated`.
 
-## Verify a fail-closed exit
+A verified development run returns exit code 0 and reports 360 rows, two years
+and 15 anomaly flags.
 
-The test fixture changes only the expected development row count from 360 to
-361. It proves a valid container invocation returns non-zero on data validation
-failure before local or Snowflake publication:
+## Failure smoke test
+
+The fixture below changes the expected row count from 360 to 361. The process
+should exit 1 before writing output or opening a Snowflake connection.
 
 ```bash
 docker run --rm \
@@ -74,20 +66,19 @@ docker run --rm \
   --validation-contract /tmp/validation.toml
 ```
 
-Expected exit code: `1`, with a `row_count` validation error reporting 360
-observed rows and an expected range of `[361, 361]`.
+Expected error:
 
-The verified successful development run exits `0` and reports 360 analytics
-rows, two reference years, and 15 anomaly flags.
+```text
+row_count: observed 360; expected [361, 361]
+```
 
-## Inspect the image
+## Inspect
 
 ```bash
 docker image inspect canadian-housing-elt:local \
   --format 'size_bytes={{.Size}} user={{.Config.User}} entrypoint={{json .Config.Entrypoint}}'
 ```
 
-The image is larger than a typical Python service because the PySpark wheel and
-Java runtime are intrinsically substantial. The relevant lean-image controls
-are removing the JDK, build tools, package caches, uv, test dependencies, and
-all data—not obscuring that unavoidable runtime cost.
+The current arm64 image is about 609 MB (581 MiB). Most of that is PySpark and
+the Java runtime. Removing either would make the image smaller but would also
+remove the workload it is meant to run.

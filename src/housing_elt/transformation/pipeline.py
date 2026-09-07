@@ -1,4 +1,4 @@
-"""Narrow orchestration for the Phase 6 local cleaning flow."""
+"""Build source-specific clean DataFrames for a configured profile."""
 
 from __future__ import annotations
 

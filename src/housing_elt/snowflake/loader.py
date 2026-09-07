@@ -15,7 +15,7 @@ from housing_elt.snowflake.config import SnowflakeSettings
 from housing_elt.snowflake.errors import SnowflakeLoadError
 from housing_elt.validation.report import ValidationReport
 
-# This order is the shared boundary between Spark and the reviewed Phase 9 DDL.
+# This order is the shared boundary between Spark and the Snowflake DDL.
 # Keeping it explicit prevents a harmless Spark column reorder from corrupting a
 # positional executemany() insert.
 ANALYTICS_COLUMNS = (

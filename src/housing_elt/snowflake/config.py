@@ -19,10 +19,10 @@ class SnowflakeConfigurationError(ValueError):
 class SnowflakeSettings:
     """One explicit Snowflake target and its login credentials.
 
-    Password authentication keeps this portfolio implementation easy to run in
-    a trial account. The password field is excluded from ``repr`` so an error or
-    debug statement cannot disclose it accidentally. Kubernetes will inject
-    these same variables from a Secret in Phase 12.
+    Password authentication keeps the optional trial-account setup simple. The
+    password field is excluded from ``repr`` so an error or debug statement
+    cannot disclose it accidentally. A Kubernetes deployment can inject the
+    same variables from a Secret.
     """
 
     account: str

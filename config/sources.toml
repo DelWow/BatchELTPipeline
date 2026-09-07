@@ -1,5 +1,5 @@
-# Machine-readable source registry for the Phase 4 ingestion contract. Phase 5
-# will parse this file; no source-specific URL should be hidden in Python code.
+# Source registry used by ingestion and transformation. URLs, table IDs and
+# profile windows live here rather than being repeated in Python code.
 contract_version = 1
 provider_id = "statistics_canada"
 provider_name = "Statistics Canada"
@@ -20,9 +20,8 @@ retry_after_cap_seconds = 300
 retryable_status_codes = [408, 409, 425, 429, 500, 502, 503, 504]
 
 [profiles.development]
-# The permits archive is deliberately excluded because its current compressed
-# size is roughly 365 MB. Its downloader behavior will be covered by mocked
-# tests before the first full-profile run.
+# The permits archive is roughly 365 MB, so it is left out of quick local runs.
+# Mocked tests still cover its download rules.
 source_ids = [
     "cmhc_housing_activity",
     "cmhc_starts_by_market",
@@ -155,4 +154,3 @@ max_archive_bytes = 50_000_000
 licence_urls = [
     "https://www.statcan.gc.ca/en/terms-conditions/open-licence",
 ]
-

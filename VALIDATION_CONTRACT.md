@@ -1,79 +1,87 @@
-# Analytics Validation Contract
+# Validation policy
 
-Phase 8 introduces a fail-closed quality gate between analytics construction
-and Parquet publication. The versioned thresholds live in
-`config/validation.toml`; code defines how each metric is calculated. A failed
-gate raises one `DataValidationError` containing all observed failures, and the
-writer is not called.
+Validation sits between analytics construction and publication. If any check
+fails, the command returns exit code 1 and neither the Parquet writer nor the
+Snowflake loader is called.
+
+Thresholds are versioned in `config/validation.toml`. Development and full
+profiles differ because their source coverage and expected row counts differ.
 
 ## Checks
 
-### Schema and required columns
+### Schema
 
-The validator checks the presence and exact Spark type of essential key,
-measure, context, coverage, and anomaly columns. Policy key and null-threshold
-columns are also required. Schema checks run before metric queries so a renamed
-or incorrectly typed field produces a direct contract error instead of a later
-Spark analysis exception.
+Required columns must exist with the expected Spark types. The contract checks
+keys, measures, coverage flags and anomaly output. Extra analytical columns are
+allowed so a compatible addition does not require a contract rewrite.
 
-### Row count, keys, and domains
+### Rows and nulls
 
-The development fact must contain exactly 360 rows:
+The development profile expects exactly 360 rows. The full profile uses a range
+because CMA coverage can change between source releases.
+
+Key columns cannot be null. Measure null rates are compared with profile limits.
+The development profile allows permits to be entirely null because that source
+is not downloaded; its core housing and price measures require complete
+coverage.
+
+### Natural key and dwelling coverage
+
+The natural key is `reference_month`, `cma_code`, `dwelling_type`. Duplicate
+keys are counted as excess rows and are not allowed.
+
+For each CMA/month, the development output must contain exactly these five
+dwelling values:
 
 ```text
-24 months × 3 CMAs × 5 canonical dwelling types = 360
+total
+single_detached
+semi_detached
+row
+apartment_and_other
 ```
 
-The full profile uses a reviewed range because available CMAs can change with
-source geography revisions. All profiles reject null natural-key fields and
-duplicate month/CMA/dwelling keys. The dwelling domain is limited to the five
-reviewed canonical types, and each CMA/month must contain the complete set.
-
-### Null thresholds
-
-Null fractions are measured as null rows divided by total fact rows. The
-development slice requires complete activity, intended-market, and NHPI values.
-Its residential permit-value null threshold is 1.0 because that profile
-explicitly does not ingest the large permits archive. A zero permit value would mean a real
-published zero; it must not be substituted for missing coverage.
-
-The full profile allows bounded core gaps and wider NHPI/permit gaps because
-those tables do not cover every CMA represented by the two CMHC sources. These
-limits are initial reviewed operating thresholds and must be re-evaluated after
-the first approved full-profile run.
+The `reference_year` partition column must agree with `reference_month`.
 
 ### Reconciliation
 
-Two independent reconciliations detect transformations that can pass simple
-row-count checks while producing wrong measures:
+When both sources are available, `housing_starts` must match the sum of the five
+intended-market fields for that row.
 
-1. Each activity `housing_starts` value must equal the sum of its five
-   intended-market start categories (`market_starts_total`).
-2. For starts, completions, and under-construction stock, the published `total`
-   dwelling value must equal the sum of the four component dwelling types at
-   the same CMA/month.
+For every complete CMA/month component set, the four non-total dwelling values
+must add to the published total for starts, completions and units under
+construction. Totals and components are compared here; they are not combined in
+analytics.
 
-The validator also requires `reference_year` to agree with `reference_month`.
-Eligible comparison counts and mismatch fractions are included in the returned
-report so a passing result remains auditable.
+The report also records activity-only keys, market-only keys, missing price
+context, missing permit context and anomaly counts. These are coverage metrics,
+not automatically failures unless the profile sets a limit for them.
 
-## Execution order
+## Failure output
 
-The local pipeline order is:
+All applicable checks run before the error is raised, so one run can report
+several issues. Messages include the check name, observed value and expected
+bound, for example:
 
 ```text
-optional ingestion
-  → source cleaning and revision resolution
-  → analytics aggregation and feature windows
-  → validation (all checks)
-  → partitioned Parquet publication
+Analytics validation failed with 1 issue(s):
+row_count: observed 359; expected [360, 360]
 ```
 
-`housing-elt run` includes idempotent ingestion by default. Passing
-`--skip-ingestion` runs offline against existing immutable snapshots. The older
-`housing-elt aggregate` command also uses the same mandatory validation gate;
-it cannot bypass quality checks.
+Schema failures return first because later metric queries may not be safe when
+required columns or types are missing.
 
-The same gate sits before the Snowflake loader. A validation failure prevents
-connection creation; local-only runs do not contact Snowflake or provision any
-paid resource.
+## Verified development result
+
+- 360 rows
+- 0 duplicate keys
+- 0 key nulls
+- 0 incomplete dwelling groups
+- 0 mismatches across 360 market reconciliations
+- 0 mismatches across 216 total/component comparisons
+- 0 missing price rows
+- 360 expected missing-permit rows
+- 15 anomaly flags
+
+Both the unit suite and the Docker/Kubernetes smoke tests include a forced
+row-count failure to confirm that publication is skipped.
